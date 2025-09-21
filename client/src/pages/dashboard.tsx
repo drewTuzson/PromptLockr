@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import { Menu, Filter, Download, RotateCcw } from 'lucide-react';
+import { useRoute } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/dashboard/Sidebar';
 import { SearchBar } from '@/components/dashboard/SearchBar';
 import { PromptCard } from '@/components/dashboard/PromptCard';
 import { CreatePromptModal } from '@/components/dashboard/CreatePromptModal';
 import { RequireAuth } from '@/components/auth/AuthProvider';
-import { usePrompts } from '@/hooks/usePrompts';
+import { usePrompts, useFavoritePrompts, useRecentPrompts } from '@/hooks/usePrompts';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Prompt } from '@shared/schema';
 import { cn } from '@/lib/utils';
 
 export default function Dashboard() {
+  const [match, params] = useRoute('/dashboard/:view?');
+  const view = params?.view || 'all';
+  
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | undefined>();
@@ -24,15 +28,60 @@ export default function Dashboard() {
   });
   
   const isMobile = useIsMobile();
-  const { data: allPrompts = [], isLoading } = usePrompts(searchQuery);
   
-  // Apply platform filtering to prompts
-  const prompts = allPrompts.filter(prompt => {
+  // Fetch data based on current view
+  const { data: allPrompts = [], isLoading: allLoading } = usePrompts(searchQuery);
+  const { data: favoritePrompts = [], isLoading: favoritesLoading } = useFavoritePrompts();
+  const { data: recentPrompts = [], isLoading: recentLoading } = useRecentPrompts();
+  
+  // Determine which prompts to show based on view
+  let sourcePrompts: Prompt[] = [];
+  let isLoading = false;
+  
+  switch (view) {
+    case 'favorites':
+      sourcePrompts = favoritePrompts;
+      isLoading = favoritesLoading;
+      break;
+    case 'recent':
+      sourcePrompts = recentPrompts;
+      isLoading = recentLoading;
+      break;
+    default:
+      sourcePrompts = allPrompts;
+      isLoading = allLoading;
+  }
+  
+  // Apply platform filtering to prompts (except for favorites view)
+  const prompts = view === 'favorites' ? sourcePrompts : sourcePrompts.filter(prompt => {
     const selectedPlatforms = Object.entries(platformFilters)
       .filter(([_, isSelected]) => isSelected)
       .map(([platform]) => platform);
     return selectedPlatforms.includes(prompt.platform);
   });
+  
+  // Get page title based on view
+  const getPageTitle = () => {
+    switch (view) {
+      case 'favorites':
+        return 'Favorites';
+      case 'recent':
+        return 'Recent Prompts';
+      default:
+        return 'All Prompts';
+    }
+  };
+  
+  const getPageDescription = () => {
+    switch (view) {
+      case 'favorites':
+        return 'Your favorited prompts';
+      case 'recent':
+        return 'Recently accessed prompts';
+      default:
+        return 'Manage and organize your AI prompts';
+    }
+  };
 
   const handleCreatePrompt = () => {
     setEditingPrompt(undefined);
@@ -164,8 +213,8 @@ export default function Dashboard() {
             {/* Content Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-2xl font-bold text-foreground">All Prompts</h2>
-                <p className="text-muted-foreground mt-1">Manage and organize your AI prompts</p>
+                <h2 className="text-2xl font-bold text-foreground">{getPageTitle()}</h2>
+                <p className="text-muted-foreground mt-1">{getPageDescription()}</p>
               </div>
               <div className="flex items-center space-x-3">
                 <Button
@@ -213,7 +262,10 @@ export default function Dashboard() {
                 </div>
                 <h3 className="text-lg font-semibold text-foreground mb-2">No prompts found</h3>
                 <p className="text-muted-foreground mb-6">
-                  {searchQuery ? 'Try adjusting your search terms.' : 'Get started by creating your first prompt.'}
+                  {searchQuery ? 'Try adjusting your search terms.' : 
+                   view === 'favorites' ? 'No favorites yet. Start by favoriting some prompts!' :
+                   view === 'recent' ? 'No recent prompts. Start using some prompts to see them here.' :
+                   'Get started by creating your first prompt.'}
                 </p>
                 <Button
                   data-testid="button-create-first-prompt"

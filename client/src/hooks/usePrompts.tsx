@@ -57,6 +57,8 @@ export function useUpdatePrompt() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/prompts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts/favorites'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts/recent'] });
       toast({
         title: "Prompt updated",
         description: "Your changes have been saved.",

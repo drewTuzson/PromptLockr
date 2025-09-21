@@ -144,6 +144,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Specific routes must come before parameterized routes
+  app.get("/api/prompts/favorites", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const prompts = await storage.getFavoritePrompts(userId);
+      res.json(prompts);
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching favorites:', error);
+      res.status(500).json({ message: "Failed to fetch favorites" });
+    }
+  });
+
+  app.get("/api/prompts/recent", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const prompts = await storage.getRecentPrompts(userId);
+      res.json(prompts);
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching recent prompts:', error);
+      res.status(500).json({ message: "Failed to fetch recent prompts" });
+    }
+  });
+
   app.get("/api/prompts/:id", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
@@ -210,33 +239,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/prompts/favorites", async (req, res) => {
-    try {
-      const { userId } = requireAuth(req);
-      const prompts = await storage.getFavoritePrompts(userId);
-      res.json(prompts);
-    } catch (error: any) {
-      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
-        return res.status(401).json({ message: error.message });
-      }
-      console.error('Error fetching favorites:', error);
-      res.status(500).json({ message: "Failed to fetch favorites" });
-    }
-  });
-
-  app.get("/api/prompts/recent", async (req, res) => {
-    try {
-      const { userId } = requireAuth(req);
-      const prompts = await storage.getRecentPrompts(userId);
-      res.json(prompts);
-    } catch (error: any) {
-      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
-        return res.status(401).json({ message: error.message });
-      }
-      console.error('Error fetching recent prompts:', error);
-      res.status(500).json({ message: "Failed to fetch recent prompts" });
-    }
-  });
 
   // Folders routes
   app.get("/api/folders", async (req, res) => {

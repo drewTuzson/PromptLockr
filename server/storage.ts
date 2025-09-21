@@ -1,5 +1,6 @@
-import { type User, type InsertUser, type Folder, type InsertFolder, type Prompt, type InsertPrompt } from "@shared/schema";
-import { randomUUID } from "crypto";
+import { type User, type InsertUser, type Folder, type InsertFolder, type Prompt, type InsertPrompt, users, folders, prompts } from "@shared/schema";
+import { db } from "./db";
+import { eq, ilike, or, desc, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
@@ -40,19 +41,7 @@ export interface IStorage {
   importUserData(userId: string, data: string): Promise<{ promptsImported: number; foldersImported: number }>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private folders: Map<string, Folder>;
-  private prompts: Map<string, Prompt>;
-  private usersByEmail: Map<string, string>; // email -> userId
-
-  constructor() {
-    this.users = new Map();
-    this.folders = new Map();
-    this.prompts = new Map();
-    this.usersByEmail = new Map();
-  }
-
+export class DatabaseStorage implements IStorage {
   // Auth operations
   async hashPassword(password: string): Promise<string> {
     return bcrypt.hash(password, 10);
@@ -76,200 +65,190 @@ export class MemStorage implements IStorage {
 
   // User operations
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const userId = this.usersByEmail.get(email);
-    if (!userId) return undefined;
-    return this.users.get(userId);
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = {
-      id,
-      email: insertUser.email,
-      passwordHash: insertUser.passwordHash,
-      createdAt: new Date(),
-      preferences: insertUser.preferences ? {
-        theme: (insertUser.preferences.theme === 'dark' ? 'dark' : 'light') as 'light' | 'dark',
-        defaultPlatform: typeof insertUser.preferences.defaultPlatform === 'string' 
-          ? insertUser.preferences.defaultPlatform 
-          : undefined
-      } : { theme: 'light' as const }
-    };
-    this.users.set(id, user);
-    this.usersByEmail.set(user.email, id);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
-    const existing = this.users.get(id);
-    if (!existing) return undefined;
-    
-    const updated = { ...existing, ...updates };
-    this.users.set(id, updated);
-    return updated;
+    const [updated] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
+    return updated || undefined;
   }
 
   // Folder operations
   async getFolder(id: string): Promise<Folder | undefined> {
-    return this.folders.get(id);
+    const [folder] = await db.select().from(folders).where(eq(folders.id, id));
+    return folder || undefined;
   }
 
   async getUserFolders(userId: string): Promise<Folder[]> {
-    return Array.from(this.folders.values()).filter(folder => folder.userId === userId);
+    return db.select().from(folders).where(eq(folders.userId, userId)).orderBy(folders.name);
   }
 
   async createFolder(insertFolder: InsertFolder): Promise<Folder> {
-    const id = randomUUID();
-    const folder: Folder = {
-      id,
-      userId: insertFolder.userId,
-      name: insertFolder.name,
-      parentId: insertFolder.parentId || null,
-      createdAt: new Date()
-    };
-    this.folders.set(id, folder);
+    const [folder] = await db.insert(folders).values(insertFolder).returning();
     return folder;
   }
 
   async updateFolder(id: string, updates: Partial<Folder>): Promise<Folder | undefined> {
-    const existing = this.folders.get(id);
-    if (!existing) return undefined;
-    
-    const updated = { ...existing, ...updates };
-    this.folders.set(id, updated);
-    return updated;
+    const [updated] = await db.update(folders).set(updates).where(eq(folders.id, id)).returning();
+    return updated || undefined;
   }
 
   async deleteFolder(id: string): Promise<boolean> {
-    return this.folders.delete(id);
+    const result = await db.delete(folders).where(eq(folders.id, id));
+    return result.rowCount > 0;
   }
 
   // Prompt operations
   async getPrompt(id: string): Promise<Prompt | undefined> {
-    return this.prompts.get(id);
+    const [prompt] = await db.select().from(prompts).where(eq(prompts.id, id));
+    return prompt || undefined;
   }
 
   async getUserPrompts(userId: string, limit = 50): Promise<Prompt[]> {
-    const userPrompts = Array.from(this.prompts.values())
-      .filter(prompt => prompt.userId === userId)
-      .sort((a, b) => new Date(b.lastAccessed!).getTime() - new Date(a.lastAccessed!).getTime())
-      .slice(0, limit);
-    
-    return userPrompts;
+    return db.select().from(prompts)
+      .where(eq(prompts.userId, userId))
+      .orderBy(desc(prompts.lastAccessed))
+      .limit(limit);
   }
 
   async createPrompt(insertPrompt: InsertPrompt): Promise<Prompt> {
-    const id = randomUUID();
-    const now = new Date();
-    const prompt: Prompt = {
-      id,
-      userId: insertPrompt.userId,
-      title: insertPrompt.title,
-      content: insertPrompt.content,
-      platform: insertPrompt.platform as 'ChatGPT' | 'Claude' | 'Midjourney' | 'DALL-E' | 'Other',
-      tags: insertPrompt.tags || [],
-      folderId: insertPrompt.folderId || null,
+    const promptData = {
+      ...insertPrompt,
+      charCount: insertPrompt.content.length.toString(),
       isFavorite: insertPrompt.isFavorite || false,
-      createdAt: now,
-      lastAccessed: now,
-      charCount: insertPrompt.content.length.toString()
     };
-    this.prompts.set(id, prompt);
+    const [prompt] = await db.insert(prompts).values(promptData).returning();
     return prompt;
   }
 
   async updatePrompt(id: string, updates: Partial<Prompt>): Promise<Prompt | undefined> {
-    const existing = this.prompts.get(id);
-    if (!existing) return undefined;
-    
-    const updated = { 
-      ...existing, 
-      ...updates, 
+    const updateData = {
+      ...updates,
       lastAccessed: new Date(),
-      charCount: updates.content ? updates.content.length.toString() : existing.charCount
+      ...(updates.content && { charCount: updates.content.length.toString() })
     };
-    this.prompts.set(id, updated);
-    return updated;
+    const [updated] = await db.update(prompts).set(updateData).where(eq(prompts.id, id)).returning();
+    return updated || undefined;
   }
 
   async deletePrompt(id: string): Promise<boolean> {
-    return this.prompts.delete(id);
+    const result = await db.delete(prompts).where(eq(prompts.id, id));
+    return result.rowCount > 0;
   }
 
   async searchPrompts(userId: string, query: string): Promise<Prompt[]> {
-    const lowerQuery = query.toLowerCase();
-    return Array.from(this.prompts.values())
-      .filter(prompt => 
-        prompt.userId === userId && (
-          prompt.title.toLowerCase().includes(lowerQuery) ||
-          prompt.content.toLowerCase().includes(lowerQuery) ||
-          prompt.tags?.some(tag => tag.toLowerCase().includes(lowerQuery))
+    return db.select().from(prompts)
+      .where(
+        and(
+          eq(prompts.userId, userId),
+          or(
+            ilike(prompts.title, `%${query}%`),
+            ilike(prompts.content, `%${query}%`)
+          )
         )
       )
-      .sort((a, b) => new Date(b.lastAccessed!).getTime() - new Date(a.lastAccessed!).getTime());
+      .orderBy(desc(prompts.lastAccessed));
   }
 
   async getFavoritePrompts(userId: string): Promise<Prompt[]> {
-    return Array.from(this.prompts.values())
-      .filter(prompt => prompt.userId === userId && prompt.isFavorite)
-      .sort((a, b) => new Date(b.lastAccessed!).getTime() - new Date(a.lastAccessed!).getTime());
+    return db.select().from(prompts)
+      .where(
+        and(
+          eq(prompts.userId, userId),
+          eq(prompts.isFavorite, true)
+        )
+      )
+      .orderBy(desc(prompts.lastAccessed));
   }
 
   async getRecentPrompts(userId: string, limit = 10): Promise<Prompt[]> {
-    return Array.from(this.prompts.values())
-      .filter(prompt => prompt.userId === userId)
-      .sort((a, b) => new Date(b.lastAccessed!).getTime() - new Date(a.lastAccessed!).getTime())
-      .slice(0, limit);
+    return db.select().from(prompts)
+      .where(eq(prompts.userId, userId))
+      .orderBy(desc(prompts.lastAccessed))
+      .limit(limit);
   }
 
+  // Export/Import operations
   async exportUserData(userId: string): Promise<string> {
-    const prompts = await this.getUserPrompts(userId, 1000);
-    const folders = await this.getUserFolders(userId);
+    const userPrompts = await this.getUserPrompts(userId, 1000);
+    const userFolders = await this.getUserFolders(userId);
     
-    return JSON.stringify({
-      version: '1.0',
-      exportDate: new Date().toISOString(),
-      prompts,
-      folders,
-      tags: Array.from(new Set(prompts.flatMap(p => p.tags || [])))
-    }, null, 2);
+    const exportData = {
+      prompts: userPrompts.map(p => ({
+        title: p.title,
+        content: p.content,
+        platform: p.platform,
+        tags: p.tags || [],
+        isFavorite: p.isFavorite
+      })),
+      folders: userFolders.map(f => ({
+        name: f.name,
+        parentId: f.parentId
+      }))
+    };
+    
+    return JSON.stringify(exportData, null, 2);
   }
 
   async importUserData(userId: string, data: string): Promise<{ promptsImported: number; foldersImported: number }> {
-    const parsed = JSON.parse(data);
-    let promptsImported = 0;
-    let foldersImported = 0;
+    try {
+      const parsedData = JSON.parse(data);
+      let promptsImported = 0;
+      let foldersImported = 0;
 
-    // Import folders first
-    for (const folder of parsed.folders || []) {
-      await this.createFolder({
-        userId,
-        name: folder.name,
-        parentId: folder.parentId
-      });
-      foldersImported++;
+      // Import folders first
+      if (parsedData.folders && Array.isArray(parsedData.folders)) {
+        for (const folderData of parsedData.folders) {
+          try {
+            await this.createFolder({
+              userId,
+              name: folderData.name,
+              parentId: folderData.parentId || null
+            });
+            foldersImported++;
+          } catch (error) {
+            console.error('Error importing folder:', error);
+          }
+        }
+      }
+
+      // Import prompts
+      if (parsedData.prompts && Array.isArray(parsedData.prompts)) {
+        for (const promptData of parsedData.prompts) {
+          try {
+            await this.createPrompt({
+              userId,
+              title: promptData.title,
+              content: promptData.content,
+              platform: promptData.platform,
+              tags: promptData.tags || [],
+              isFavorite: promptData.isFavorite || false,
+              folderId: null // Don't link to folders for now
+            });
+            promptsImported++;
+          } catch (error) {
+            console.error('Error importing prompt:', error);
+          }
+        }
+      }
+
+      return { promptsImported, foldersImported };
+    } catch (error) {
+      console.error('Error parsing import data:', error);
+      throw new Error('Invalid import data format');
     }
-
-    // Import prompts
-    for (const prompt of parsed.prompts || []) {
-      await this.createPrompt({
-        userId,
-        title: prompt.title,
-        content: prompt.content,
-        platform: prompt.platform,
-        tags: prompt.tags,
-        folderId: prompt.folderId,
-        isFavorite: prompt.isFavorite
-      });
-      promptsImported++;
-    }
-
-    return { promptsImported, foldersImported };
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

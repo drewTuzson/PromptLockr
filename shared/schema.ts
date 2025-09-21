@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, relations } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -82,3 +82,33 @@ export const signupSchema = z.object({
 
 export type LoginData = z.infer<typeof loginSchema>;
 export type SignupData = z.infer<typeof signupSchema>;
+
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  folders: many(folders),
+  prompts: many(prompts),
+}));
+
+export const foldersRelations = relations(folders, ({ one, many }) => ({
+  user: one(users, {
+    fields: [folders.userId],
+    references: [users.id],
+  }),
+  parent: one(folders, {
+    fields: [folders.parentId],
+    references: [folders.id],
+  }),
+  children: many(folders),
+  prompts: many(prompts),
+}));
+
+export const promptsRelations = relations(prompts, ({ one }) => ({
+  user: one(users, {
+    fields: [prompts.userId],
+    references: [users.id],
+  }),
+  folder: one(folders, {
+    fields: [prompts.folderId],
+    references: [folders.id],
+  }),
+}));
