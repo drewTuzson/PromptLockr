@@ -16,9 +16,23 @@ export default function Dashboard() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | undefined>();
   const [searchQuery, setSearchQuery] = useState('');
+  const [platformFilters, setPlatformFilters] = useState({
+    ChatGPT: true,
+    Claude: true,
+    Midjourney: true,
+    'DALL-E': true,
+  });
   
   const isMobile = useIsMobile();
-  const { data: prompts = [], isLoading } = usePrompts(searchQuery);
+  const { data: allPrompts = [], isLoading } = usePrompts(searchQuery);
+  
+  // Apply platform filtering to prompts
+  const prompts = allPrompts.filter(prompt => {
+    const selectedPlatforms = Object.entries(platformFilters)
+      .filter(([_, isSelected]) => isSelected)
+      .map(([platform]) => platform);
+    return selectedPlatforms.includes(prompt.platform);
+  });
 
   const handleCreatePrompt = () => {
     setEditingPrompt(undefined);
@@ -129,6 +143,8 @@ export default function Dashboard() {
           <Sidebar
             onCreatePrompt={handleCreatePrompt}
             onImport={handleImport}
+            platformFilters={platformFilters}
+            setPlatformFilters={setPlatformFilters}
             className={cn(
               "lg:translate-x-0 fixed lg:relative z-30",
               isMobile && sidebarOpen ? "translate-x-0" : isMobile ? "-translate-x-full" : ""

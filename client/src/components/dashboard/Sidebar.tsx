@@ -25,10 +25,12 @@ import { cn } from '@/lib/utils';
 interface SidebarProps {
   onCreatePrompt: () => void;
   onImport: () => void;
+  platformFilters: Record<string, boolean>;
+  setPlatformFilters: (filters: Record<string, boolean>) => void;
   className?: string;
 }
 
-export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
+export function Sidebar({ onCreatePrompt, onImport, platformFilters, setPlatformFilters, className }: SidebarProps) {
   const [location] = useLocation();
   const { logout, user } = useAuth();
   const { theme, setTheme } = useTheme();
@@ -37,22 +39,17 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
   const { data: favoritePrompts = [] } = useFavoritePrompts();
   const { data: recentPrompts = [] } = useRecentPrompts();
   
-  const [platformFilters, setPlatformFilters] = useState({
-    ChatGPT: true,
-    Claude: true,
-    Midjourney: false,
-    'DALL-E': false,
-  });
+  // Platform filters are now managed by parent Dashboard component
 
   const getPlatformCount = (platform: string) => {
     return allPrompts.filter(p => p.platform === platform).length;
   };
 
   const togglePlatformFilter = (platform: string) => {
-    setPlatformFilters(prev => ({
-      ...prev,
-      [platform]: !prev[platform as keyof typeof prev]
-    }));
+    setPlatformFilters({
+      ...platformFilters,
+      [platform]: !platformFilters[platform]
+    });
   };
 
   const toggleTheme = () => {
