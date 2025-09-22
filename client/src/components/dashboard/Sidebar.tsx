@@ -20,6 +20,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/components/ui/theme-provider';
 import { usePrompts, useFavoritePrompts, useRecentPrompts } from '@/hooks/usePrompts';
+import { useFolders } from '@/hooks/useFolders';
+import { FolderItem } from './FolderItem';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -38,6 +40,7 @@ export function Sidebar({ onCreatePrompt, onImport, platformFilters, setPlatform
   const { data: allPrompts = [] } = usePrompts();
   const { data: favoritePrompts = [] } = useFavoritePrompts();
   const { data: recentPrompts = [] } = useRecentPrompts();
+  const { data: folders = [] } = useFolders();
   
   // Platform filters are now managed by parent Dashboard component
 
@@ -151,23 +154,22 @@ export function Sidebar({ onCreatePrompt, onImport, platformFilters, setPlatform
             Folders
           </div>
           <div className="space-y-1">
-            {[
-              { name: 'Content Creation', count: 45 },
-              { name: 'Development', count: 32 },
-              { name: 'Image Generation', count: 28 },
-              { name: 'Research & Analysis', count: 22 },
-            ].map((folder) => (
-              <div
-                key={folder.name}
-                data-testid={`folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
-                className="flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
-              >
-                <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                <Folder className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm">{folder.name}</span>
-                <span className="ml-auto text-xs text-muted-foreground">{folder.count}</span>
+            {folders.map((folder) => {
+              // Count prompts in this folder
+              const promptCount = allPrompts.filter(p => p.folderId === folder.id).length;
+              return (
+                <FolderItem
+                  key={folder.id}
+                  folder={folder}
+                  promptCount={promptCount}
+                />
+              );
+            })}
+            {folders.length === 0 && (
+              <div className="text-xs text-muted-foreground px-3 py-2">
+                No folders yet
               </div>
-            ))}
+            )}
           </div>
         </div>
 

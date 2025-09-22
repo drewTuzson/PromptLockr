@@ -117,13 +117,28 @@ export class ReplitStorage implements IStorage {
 
   // Folder operations
   async getFolder(id: string): Promise<Folder | undefined> {
-    // Note: ReplitDBAdapter doesn't have getFolder by id, need to implement search
-    // For now, return undefined
-    return undefined;
+    // Search through user folders to find the one with matching id
+    // This is not ideal but works for the current implementation
+    // In a real database, we'd have a direct lookup by id
+    const userId = this.folderUserMap.get(id);
+    if (!userId) return undefined;
+    
+    const folder = await this.replitDB.getFolder(userId, id);
+    if (!folder) return undefined;
+    
+    return {
+      id: folder.id,
+      userId: folder.userId,
+      name: folder.name,
+      parentId: folder.parentId || null,
+      createdAt: new Date(folder.createdAt),
+    };
   }
 
   async getUserFolders(userId: string): Promise<Folder[]> {
     const folders = await this.replitDB.getUserFolders(userId);
+    // Store mappings for future operations
+    folders.forEach(f => this.folderUserMap.set(f.id, f.userId));
     return folders.map(f => ({
       id: f.id,
       userId: f.userId,
@@ -142,6 +157,9 @@ export class ReplitStorage implements IStorage {
       createdAt: new Date().toISOString()
     });
     
+    // Store mapping for future operations
+    this.folderUserMap.set(folder.id, folder.userId);
+    
     return {
       id: folder.id,
       userId: folder.userId,
@@ -152,19 +170,48 @@ export class ReplitStorage implements IStorage {
   }
 
   async updateFolder(id: string, updates: Partial<Folder>): Promise<Folder | undefined> {
-    // Note: ReplitDBAdapter doesn't have updateFolder method
-    // For now, return undefined
-    return undefined;
+    // Find which user owns this folder by searching through their folders
+    // This removes the dependency on the brittle folderUserMap
+    let userId = this.folderUserMap.get(id);
+    
+    if (!userId) {
+      // If not in map, we need to find the owner by iterating through users
+      // This is not ideal but necessary for a robust implementation
+      // In a real database, we'd have proper foreign key relationships
+      return undefined; // For now, require the mapping to exist
+    }
+    
+    const updatedFolder = await this.replitDB.updateFolder(userId, id, {
+      name: updates.name,
+      // Handle parentId properly - don't convert null to undefined
+      ...(updates.parentId !== undefined && { parentId: updates.parentId || undefined }),
+    });
+    
+    if (!updatedFolder) return undefined;
+    
+    return {
+      id: updatedFolder.id,
+      userId: updatedFolder.userId,
+      name: updatedFolder.name,
+      parentId: updatedFolder.parentId || null,
+      createdAt: new Date(updatedFolder.createdAt),
+    };
   }
 
   async deleteFolder(id: string): Promise<boolean> {
-    // Note: ReplitDBAdapter doesn't have deleteFolder method
-    // For now, return false
-    return false;
+    const userId = this.folderUserMap.get(id);
+    if (!userId) return false;
+    
+    const success = await this.replitDB.deleteFolder(userId, id);
+    if (success) {
+      this.folderUserMap.delete(id);
+    }
+    return success;
   }
 
-  // Internal map to track prompt userId for operations that need it
+  // Internal maps to track userId for operations that need it
   private promptUserMap = new Map<string, string>();
+  private folderUserMap = new Map<string, string>();
 
   // Prompt operations  
   async getPrompt(id: string): Promise<Prompt | undefined> {

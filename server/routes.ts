@@ -323,6 +323,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put("/api/folders/:id", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const folderId = req.params.id;
+      
+      // First, verify the folder belongs to the authenticated user
+      const userFolders = await storage.getUserFolders(userId);
+      const targetFolder = userFolders.find(f => f.id === folderId);
+      
+      if (!targetFolder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      
+      // Validate the update data with partial schema
+      const updateData: { name?: string; parentId?: string | null } = {};
+      
+      if (req.body.name !== undefined) {
+        if (typeof req.body.name !== 'string' || !req.body.name.trim()) {
+          return res.status(400).json({ message: "Folder name must be a non-empty string" });
+        }
+        updateData.name = req.body.name.trim();
+      }
+      
+      if (req.body.parentId !== undefined) {
+        updateData.parentId = req.body.parentId;
+      }
+      
+      const updatedFolder = await storage.updateFolder(folderId, updateData);
+      
+      if (!updatedFolder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      
+      res.json(updatedFolder);
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error updating folder:', error);
+      res.status(500).json({ message: "Failed to update folder" });
+    }
+  });
+
+  app.delete("/api/folders/:id", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const folderId = req.params.id;
+      
+      // First, verify the folder belongs to the authenticated user
+      const userFolders = await storage.getUserFolders(userId);
+      const targetFolder = userFolders.find(f => f.id === folderId);
+      
+      if (!targetFolder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      
+      // Handle data integrity: reassign prompts in this folder to no folder
+      const userPrompts = await storage.getUserPrompts(userId);
+      const promptsInFolder = userPrompts.filter(p => p.folderId === folderId);
+      
+      // Update all prompts in this folder to remove the folder reference
+      for (const prompt of promptsInFolder) {
+        await storage.updatePrompt(prompt.id, { folderId: null });
+      }
+      
+      const success = await storage.deleteFolder(folderId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      
+      res.json({ message: "Folder deleted successfully" });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error deleting folder:', error);
+      res.status(500).json({ message: "Failed to delete folder" });
+    }
+  });
+
   // Export/Import routes
   app.get("/api/export", async (req, res) => {
     try {

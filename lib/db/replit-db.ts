@@ -259,6 +259,48 @@ export class ReplitDBAdapter {
     }
   }
 
+  async getFolder(userId: string, folderId: string): Promise<FolderDB | null> {
+    try {
+      const data = await db.get(`folder:${userId}:${folderId}`);
+      if (!data) return null;
+      
+      // Check if Replit Database returned an error object
+      if (typeof data === 'object' && 'ok' in data && data.ok === false) {
+        return null;
+      }
+      
+      // Handle Replit Database wrapped response format
+      let jsonString;
+      if (typeof data === 'object' && 'ok' in data && data.ok === true && 'value' in data) {
+        jsonString = data.value as string;
+      } else if (typeof data === 'string') {
+        jsonString = data;
+      } else {
+        // Direct object return (fallback)
+        return data as FolderDB;
+      }
+      
+      return JSON.parse(jsonString);
+    } catch (error) {
+      console.error('Error getting folder:', error);
+      return null;
+    }
+  }
+
+  async updateFolder(userId: string, folderId: string, updates: Partial<FolderDB>): Promise<FolderDB | null> {
+    const existing = await this.getFolder(userId, folderId);
+    if (!existing) return null;
+    
+    const updated = { ...existing, ...updates };
+    await db.set(`folder:${userId}:${folderId}`, JSON.stringify(updated));
+    return updated;
+  }
+
+  async deleteFolder(userId: string, folderId: string): Promise<boolean> {
+    await db.delete(`folder:${userId}:${folderId}`);
+    return true;
+  }
+
   // Export functionality
   async exportUserData(userId: string): Promise<string> {
     const prompts = await this.getUserPrompts(userId, 1000);

@@ -69,6 +69,9 @@ export type Prompt = typeof prompts.$inferSelect;
 export const createPromptSchema = insertPromptSchema.omit({ userId: true });
 export type CreatePrompt = z.infer<typeof createPromptSchema>;
 
+export const createFolderSchema = insertFolderSchema.omit({ userId: true });
+export type CreateFolder = z.infer<typeof createFolderSchema>;
+
 // Auth schemas
 export const loginSchema = z.object({
   email: z.string().email(),
