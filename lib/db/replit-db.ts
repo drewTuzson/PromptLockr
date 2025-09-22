@@ -159,11 +159,19 @@ export class ReplitDBAdapter {
 
   async getUserPrompts(userId: string, limit = 50): Promise<PromptDB[]> {
     try {
-      const keys = await db.list(`prompt:${userId}:`);
+      const keysResponse = await db.list(`prompt:${userId}:`);
       const prompts: PromptDB[] = [];
       
-      // Handle the keys array properly
-      const keyArray = Array.isArray(keys) ? keys : [];
+      // Handle Replit Database wrapped response format for list
+      let keyArray: string[] = [];
+      if (typeof keysResponse === 'object' && 'ok' in keysResponse && keysResponse.ok === true && 'value' in keysResponse) {
+        keyArray = keysResponse.value as string[];
+      } else if (Array.isArray(keysResponse)) {
+        keyArray = keysResponse;
+      } else {
+        console.log('Unexpected keys response format:', keysResponse);
+        return [];
+      }
       
       for (const key of keyArray.slice(0, limit)) {
         const data = await db.get(key);
@@ -213,11 +221,19 @@ export class ReplitDBAdapter {
 
   async getUserFolders(userId: string): Promise<FolderDB[]> {
     try {
-      const keys = await db.list(`folder:${userId}:`);
+      const keysResponse = await db.list(`folder:${userId}:`);
       const folders: FolderDB[] = [];
       
-      // Handle the keys array properly
-      const keyArray = Array.isArray(keys) ? keys : [];
+      // Handle Replit Database wrapped response format for list
+      let keyArray: string[] = [];
+      if (typeof keysResponse === 'object' && 'ok' in keysResponse && keysResponse.ok === true && 'value' in keysResponse) {
+        keyArray = keysResponse.value as string[];
+      } else if (Array.isArray(keysResponse)) {
+        keyArray = keysResponse;
+      } else {
+        console.log('Unexpected keys response format:', keysResponse);
+        return [];
+      }
       
       for (const key of keyArray) {
         const data = await db.get(key);

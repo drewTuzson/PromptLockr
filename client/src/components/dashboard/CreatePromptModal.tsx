@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -63,6 +63,30 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
       isFavorite: editingPrompt?.isFavorite || false,
     },
   });
+
+  // Reset form when editingPrompt changes
+  React.useEffect(() => {
+    if (editingPrompt) {
+      console.log('Resetting form with editingPrompt:', editingPrompt);
+      form.reset({
+        title: editingPrompt.title || '',
+        content: editingPrompt.content || '',
+        platform: editingPrompt.platform || 'ChatGPT',
+        tags: editingPrompt.tags || [],
+        isFavorite: editingPrompt.isFavorite || false,
+      });
+      setTags(editingPrompt.tags || []);
+    } else {
+      form.reset({
+        title: '',
+        content: '',
+        platform: 'ChatGPT',
+        tags: [],
+        isFavorite: false,
+      });
+      setTags([]);
+    }
+  }, [editingPrompt, form]);
 
   const onSubmit = async (data: PromptFormData) => {
     try {
