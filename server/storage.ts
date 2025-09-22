@@ -96,7 +96,7 @@ export class ReplitStorage implements IStorage {
     const user = await this.replitDB.createUser({
       email: insertUser.email,
       passwordHash: insertUser.passwordHash,
-      preferences: insertUser.preferences || { theme: 'light' as const },
+      preferences: insertUser.preferences || { theme: 'light' as 'light' | 'dark' },
       createdAt: new Date().toISOString()
     });
     
