@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Menu, Filter, Download, RotateCcw, ArrowLeft, Trash2 } from 'lucide-react';
+import { Menu, Filter, Download, RotateCcw, ArrowLeft, Trash2, Grid3X3, List, Edit } from 'lucide-react';
 import { useRoute, Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/dashboard/Sidebar';
@@ -17,6 +17,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { RequireAuth } from '@/components/auth/AuthProvider';
 import { usePrompts, useFavoritePrompts, useRecentPrompts, useTrashedPrompts, useRestorePrompt, usePermanentlyDeletePrompt } from '@/hooks/usePrompts';
 import { useFolders } from '@/hooks/useFolders';
@@ -38,6 +46,9 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [detailPrompt, setDetailPrompt] = useState<Prompt | null>(null);
   const [promptToDelete, setPromptToDelete] = useState<string | null>(null);
+  const [platformFilter, setPlatformFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
   
   const isMobile = useIsMobile();
   
@@ -79,8 +90,65 @@ export default function Dashboard() {
       isLoading = allLoading;
   }
   
-  // Use source prompts directly without platform filtering
-  const prompts = sourcePrompts;
+  // Apply platform and date filters
+  const applyFilters = (prompts: Prompt[]) => {
+    let filtered = [...prompts];
+
+    // Apply platform filter
+    if (platformFilter !== 'all') {
+      filtered = filtered.filter(prompt => prompt.platform === platformFilter);
+    }
+
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      const filterDate = new Date();
+      
+      switch (dateFilter) {
+        case '7days':
+          filterDate.setDate(now.getDate() - 7);
+          break;
+        case '30days':
+          filterDate.setDate(now.getDate() - 30);
+          break;
+        default:
+          return filtered;
+      }
+      
+      filtered = filtered.filter(prompt => {
+        if (!prompt.createdAt) return false;
+        const promptDate = new Date(prompt.createdAt);
+        return promptDate >= filterDate;
+      });
+    }
+
+    return filtered;
+  };
+
+  const prompts = applyFilters(sourcePrompts);
+  
+  // Platform and date filter options
+  const platformOptions = [
+    { value: 'all', label: 'All Platforms' },
+    { value: 'ChatGPT', label: 'ChatGPT' },
+    { value: 'Claude', label: 'Claude' },
+    { value: 'Perplexity', label: 'Perplexity' },
+    { value: 'Gemini', label: 'Gemini' },
+    { value: 'Mistral', label: 'Mistral' },
+    { value: 'Midjourney', label: 'Midjourney' },
+    { value: 'DALL-E', label: 'DALL-E' },
+    { value: 'Stable Diffusion', label: 'Stable Diffusion' },
+    { value: 'Leonardo AI', label: 'Leonardo AI' },
+    { value: 'Llama', label: 'Llama' },
+    { value: 'Cohere', label: 'Cohere' },
+    { value: 'Custom/Other', label: 'Custom/Other' }
+  ];
+
+  const dateOptions = [
+    { value: 'all', label: 'All Time' },
+    { value: '7days', label: 'Last 7 days' },
+    { value: '30days', label: 'Last 30 days' }
+  ];
   
   // Get current folder name if in folder view
   const currentFolder = folderId ? folders.find(f => f.id === folderId) : null;
@@ -230,9 +298,15 @@ export default function Dashboard() {
 
             {/* Header Actions */}
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-                <span className="text-sm font-medium text-primary-foreground">U</span>
-              </div>
+              <Link to="/settings" className="cursor-pointer">
+                <div 
+                  data-testid="link-profile-settings"
+                  className="w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:opacity-90 transition-opacity"
+                >
+                  {/* TODO: Post-MVP - Add profile photo upload functionality to replace text initial */}
+                  <span className="text-sm font-medium text-primary-foreground">U</span>
+                </div>
+              </Link>
             </div>
           </div>
         </header>
@@ -280,19 +354,71 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="flex items-center space-x-3">
-                <Button
-                  data-testid="button-filter"
-                  variant="outline"
-                  className="flex items-center space-x-2"
-                >
-                  <Filter className="w-4 h-4" />
-                  <span>Filter</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      data-testid="button-filter"
+                      variant="outline"
+                      className="flex items-center space-x-2 hover-bg-consistent"
+                    >
+                      <Filter className="w-4 h-4" />
+                      <span>Filter</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuLabel>Platform</DropdownMenuLabel>
+                    {platformOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option.value}
+                        onClick={() => setPlatformFilter(option.value)}
+                        data-testid={`filter-platform-${option.value}`}
+                        className={cn(platformFilter === option.value && "bg-accent")}
+                      >
+                        {option.label}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Date Range</DropdownMenuLabel>
+                    {dateOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option.value}
+                        onClick={() => setDateFilter(option.value)}
+                        data-testid={`filter-date-${option.value}`}
+                        className={cn(dateFilter === option.value && "bg-accent")}
+                      >
+                        {option.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                
+                {/* View Mode Toggle */}
+                <div className="flex items-center border rounded-lg">
+                  <Button
+                    data-testid="button-view-card"
+                    variant={viewMode === 'card' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('card')}
+                    className="rounded-r-none hover-bg-consistent"
+                  >
+                    <Grid3X3 className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    data-testid="button-view-list"
+                    variant={viewMode === 'list' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('list')}
+                    className="rounded-l-none border-l hover-bg-consistent"
+                  >
+                    <List className="w-4 h-4" />
+                  </Button>
+                </div>
+                
                 <Button
                   data-testid="button-export"
                   variant="outline"
                   onClick={handleExport}
-                  className="flex items-center space-x-2"
+                  className="flex items-center space-x-2 hover-bg-consistent"
                 >
                   <Download className="w-4 h-4" />
                   <span>Export</span>
@@ -328,76 +454,163 @@ export default function Dashboard() {
                   {searchQuery ? 'Try adjusting your search terms.' : 
                    view === 'favorites' ? 'No favorites yet. Start by favoriting some prompts!' :
                    view === 'recent' ? 'No recent prompts. Start using some prompts to see them here.' :
+                   view === 'trash' ? 'Trash is empty.' :
                    'Get started by creating your first prompt.'}
                 </p>
-                <Button
-                  data-testid="button-create-first-prompt"
-                  onClick={handleCreatePrompt}
-                  className="flex items-center space-x-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span>Create Your First Prompt</span>
-                </Button>
+                {/* Only show create button for main views, not for trash or favorites */}
+                {!searchQuery && view !== 'favorites' && view !== 'recent' && view !== 'trash' && (
+                  <Button
+                    data-testid="button-create-first-prompt"
+                    onClick={handleCreatePrompt}
+                    className="flex items-center space-x-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Create Your First Prompt</span>
+                  </Button>
+                )}
               </div>
             )}
 
-            {/* Prompts Grid */}
+            {/* Prompts Display */}
             {!isLoading && prompts.length > 0 && (
               <>
-                <div 
-                  data-testid="prompts-grid"
-                  className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
-                >
-                  {view === 'trash' ? (
-                    // Render trash-specific prompt cards with restore/delete actions
-                    prompts.map((prompt) => (
-                      <div key={prompt.id} className="relative group">
+                {viewMode === 'card' ? (
+                  <div 
+                    data-testid="prompts-grid"
+                    className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+                  >
+                    {view === 'trash' ? (
+                      // Render trash-specific prompt cards with restore/delete actions
+                      prompts.map((prompt) => (
+                        <div key={prompt.id} className="relative group">
+                          <PromptCard
+                            prompt={prompt}
+                            onEdit={() => {}} // Disabled for trashed prompts
+                            onClick={setDetailPrompt}
+                          />
+                          
+                          {/* Trash-specific actions overlay */}
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center space-x-2">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleRestorePrompt(prompt.id)}
+                              disabled={restorePrompt.isPending}
+                              data-testid={`button-restore-${prompt.id}`}
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <RotateCcw className="w-4 h-4 mr-1" />
+                              Restore
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => setPromptToDelete(prompt.id)}
+                              disabled={permanentlyDeletePrompt.isPending}
+                              data-testid={`button-permanent-delete-${prompt.id}`}
+                            >
+                              <Trash2 className="w-4 h-4 mr-1" />
+                              Delete Forever
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      // Render normal prompt cards for other views
+                      prompts.map((prompt) => (
                         <PromptCard
+                          key={prompt.id}
                           prompt={prompt}
-                          onEdit={() => {}} // Disabled for trashed prompts
+                          onEdit={handleEditPrompt}
                           onClick={setDetailPrompt}
                         />
-                        
-                        {/* Trash-specific actions overlay */}
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center space-x-2">
-                          <Button
-                            size="sm"
-                            variant="default"
-                            onClick={() => handleRestorePrompt(prompt.id)}
-                            disabled={restorePrompt.isPending}
-                            data-testid={`button-restore-${prompt.id}`}
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                          >
-                            <RotateCcw className="w-4 h-4 mr-1" />
-                            Restore
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => setPromptToDelete(prompt.id)}
-                            disabled={permanentlyDeletePrompt.isPending}
-                            data-testid={`button-permanent-delete-${prompt.id}`}
-                          >
-                            <Trash2 className="w-4 h-4 mr-1" />
-                            Delete Forever
-                          </Button>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  // List View
+                  <div 
+                    data-testid="prompts-list" 
+                    className="space-y-2"
+                  >
+                    {prompts.map((prompt) => (
+                      <div 
+                        key={prompt.id} 
+                        className="flex items-center justify-between p-4 bg-card border rounded-lg hover:shadow-sm transition-shadow cursor-pointer group"
+                        onClick={() => setDetailPrompt(prompt)}
+                        data-testid={`list-item-prompt-${prompt.id}`}
+                      >
+                        <div className="flex items-center space-x-4 flex-1 min-w-0">
+                          <div className={cn(
+                            "px-2 py-1 rounded text-xs font-medium", 
+                            prompt.platform === 'ChatGPT' && "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+                            prompt.platform === 'Claude' && "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+                            prompt.platform === 'Midjourney' && "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+                            prompt.platform === 'DALL-E' && "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+                            !['ChatGPT', 'Claude', 'Midjourney', 'DALL-E'].includes(prompt.platform) && "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                          )}>
+                            {prompt.platform}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-foreground truncate" data-testid="text-prompt-title">
+                              {prompt.title}
+                            </h3>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {prompt.createdAt ? new Date(prompt.createdAt).toLocaleDateString() : 'No date'}
+                          </div>
                         </div>
+                        
+                        {view === 'trash' ? (
+                          // Trash actions for list view
+                          <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRestorePrompt(prompt.id);
+                              }}
+                              disabled={restorePrompt.isPending}
+                              data-testid={`button-restore-list-${prompt.id}`}
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPromptToDelete(prompt.id);
+                              }}
+                              disabled={permanentlyDeletePrompt.isPending}
+                              data-testid={`button-permanent-delete-list-${prompt.id}`}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </div>
+                        ) : (
+                          // Normal actions for list view
+                          <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditPrompt(prompt);
+                              }}
+                              data-testid={`button-edit-list-${prompt.id}`}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                    ))
-                  ) : (
-                    // Render normal prompt cards for other views
-                    prompts.map((prompt) => (
-                      <PromptCard
-                        key={prompt.id}
-                        prompt={prompt}
-                        onEdit={handleEditPrompt}
-                        onClick={setDetailPrompt}
-                      />
-                    ))
-                  )}
-                </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Load More Button */}
                 {prompts.length >= 50 && (

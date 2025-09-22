@@ -231,6 +231,7 @@ export class ReplitDBAdapter {
     return allPrompts.filter(prompt => 
       prompt.title.toLowerCase().includes(lowerQuery) ||
       prompt.content.toLowerCase().includes(lowerQuery) ||
+      prompt.platform.toLowerCase().includes(lowerQuery) ||
       prompt.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
     );
   }

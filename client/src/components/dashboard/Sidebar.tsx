@@ -78,8 +78,9 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
   };
 
   return (
-    <aside className={cn("w-64 bg-card border-r border-border min-h-screen sidebar-transition", className)}>
-      <div className="p-6 space-y-6">
+    <aside className={cn("w-64 bg-card border-r border-border h-screen flex flex-col sidebar-transition", className)}>
+      {/* Top Section - Fixed */}
+      <div className="flex-shrink-0 p-6 space-y-6">
         {/* Quick Actions */}
         <div className="space-y-3">
           <Button
@@ -94,7 +95,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             data-testid="button-import"
             onClick={onImport}
             variant="outline"
-            className="w-full border border-border py-2.5 px-4 rounded-lg font-medium hover:bg-muted transition-colors flex items-center justify-center space-x-2"
+            className="w-full border border-border py-2.5 px-4 rounded-lg font-medium hover-bg-consistent transition-colors flex items-center justify-center space-x-2"
           >
             <Upload className="w-4 h-4" />
             <span>Import</span>
@@ -110,10 +111,10 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             <div
               data-testid="link-all-prompts"
               className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors",
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
                 location === '/dashboard' 
                   ? "bg-muted text-foreground" 
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               <Briefcase className="w-4 h-4" />
@@ -128,10 +129,10 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             <div
               data-testid="link-favorites"
               className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors",
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
                 location === '/dashboard/favorites'
                   ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               <Heart className="w-4 h-4" />
@@ -146,10 +147,10 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             <div
               data-testid="link-recent"
               className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors",
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
                 location === '/dashboard/recent'
                   ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               <Clock className="w-4 h-4" />
@@ -161,10 +162,10 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             <div
               data-testid="link-trash"
               className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors",
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
                 location === '/dashboard/trash'
                   ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               <Trash2 className="w-4 h-4" />
@@ -175,13 +176,15 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             </div>
           </Link>
         </nav>
+      </div>
 
-        {/* Folders */}
-        <div className="space-y-2">
+      {/* Middle Section - Scrollable Folders */}
+      <div className="flex-1 overflow-hidden px-6">
+        <div className="space-y-2 h-full">
           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
             Folders
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 overflow-y-auto h-full">
             {folders.map((folder) => {
               // Count prompts in this folder
               const promptCount = allPrompts.filter(p => p.folderId === folder.id).length;
@@ -229,7 +232,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
               <Button
                 data-testid="button-new-folder"
                 variant="ghost"
-                className="w-full justify-start space-x-2 px-3 py-2 h-auto text-xs text-muted-foreground hover:text-foreground"
+                className="w-full justify-start space-x-2 px-3 py-2 h-auto text-xs text-muted-foreground hover:text-foreground hover-bg-consistent"
                 onClick={() => setIsCreatingFolder(true)}
               >
                 <Plus className="w-4 h-4" />
@@ -243,15 +246,17 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             )}
           </div>
         </div>
+      </div>
 
-
+      {/* Bottom Section - Fixed */}
+      <div className="flex-shrink-0 p-6 space-y-6">
         {/* User Actions */}
         <div className="border-t border-border pt-6 space-y-2">
           <Button
             data-testid="button-theme-toggle"
             variant="ghost"
             onClick={toggleTheme}
-            className="w-full justify-start space-x-3"
+            className="w-full justify-start space-x-3 hover-bg-consistent"
           >
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             <span>{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
@@ -260,7 +265,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
           <Button
             data-testid="button-settings"
             variant="ghost"
-            className="w-full justify-start space-x-3"
+            className="w-full justify-start space-x-3 hover-bg-consistent"
             asChild
           >
             <Link to="/settings">
@@ -273,7 +278,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             data-testid="button-logout"
             variant="ghost"
             onClick={logout}
-            className="w-full justify-start space-x-3 text-destructive hover:text-destructive"
+            className="w-full justify-start space-x-3 text-destructive hover:text-destructive hover-bg-consistent"
           >
             <LogOut className="w-4 h-4" />
             <span>Logout</span>

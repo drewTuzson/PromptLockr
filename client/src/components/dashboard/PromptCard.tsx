@@ -110,7 +110,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
               data-testid="button-copy"
               variant="ghost"
               size="sm"
-              className="p-1.5 h-auto"
+              className="p-1.5 h-auto hover-bg-consistent"
               onClick={(e) => {
                 e.stopPropagation();
                 handleCopy();
@@ -122,7 +122,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
               data-testid="button-favorite"
               variant="ghost"
               size="sm"
-              className="p-1.5 h-auto"
+              className="p-1.5 h-auto hover-bg-consistent"
               onClick={(e) => {
                 e.stopPropagation();
                 handleFavoriteToggle();
@@ -141,7 +141,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
                   data-testid="button-menu"
                   variant="ghost"
                   size="sm"
-                  className="p-1.5 h-auto"
+                  className="p-1.5 h-auto hover-bg-consistent"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="w-4 h-4 text-muted-foreground" />
