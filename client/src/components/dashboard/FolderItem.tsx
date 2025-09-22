@@ -88,7 +88,6 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
   if (isEditing) {
     return (
       <div className="flex items-center space-x-2 px-3 py-2 rounded-lg bg-muted">
-        <ChevronRight className="w-4 h-4 text-muted-foreground" />
         <Folder className="w-4 h-4 text-muted-foreground" />
         <Input
           data-testid={`input-rename-folder-${folder.id}`}
@@ -131,7 +130,6 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
           to={`/dashboard/folder/${folder.id}`}
           className="flex items-center space-x-2 flex-1 cursor-pointer"
         >
-          <ChevronRight className="w-4 h-4 text-muted-foreground" />
           <Folder className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm flex-1">{folder.name}</span>
           <span className="text-xs text-muted-foreground">{promptCount}</span>
@@ -161,7 +159,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
             <DropdownMenuItem
               data-testid={`menu-delete-folder-${folder.id}`}
               onClick={() => setShowDeleteDialog(true)}
-              className="cursor-pointer text-destructive focus:text-destructive hover:bg-destructive hover:text-destructive-foreground"
+              className="cursor-pointer text-destructive focus:text-destructive hover:!bg-destructive hover:!text-destructive-foreground focus:!bg-destructive focus:!text-destructive-foreground"
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Delete

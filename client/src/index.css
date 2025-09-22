@@ -84,24 +84,24 @@
 
 @layer components {
   .platform-chatgpt { 
-    background: linear-gradient(135deg, hsl(155 100% 35%) 0%, hsl(145 85% 30%) 100%);
-    color: white;
+    background: linear-gradient(135deg, hsl(155 100% 35%) 0%, hsl(145 85% 30%) 100%) !important;
+    color: white !important;
   }
   .platform-claude { 
-    background: linear-gradient(135deg, hsl(22 100% 55%) 0%, hsl(15 85% 50%) 100%);
-    color: white;
+    background: linear-gradient(135deg, hsl(22 100% 55%) 0%, hsl(15 85% 50%) 100%) !important;
+    color: white !important;
   }
   .platform-midjourney { 
-    background: linear-gradient(135deg, hsl(262 80% 60%) 0%, hsl(250 75% 55%) 100%);
-    color: white;
+    background: linear-gradient(135deg, hsl(262 80% 60%) 0%, hsl(250 75% 55%) 100%) !important;
+    color: white !important;
   }
   .platform-dalle { 
-    background: linear-gradient(135deg, hsl(200 100% 50%) 0%, hsl(210 85% 45%) 100%);
-    color: white;
+    background: linear-gradient(135deg, hsl(200 100% 50%) 0%, hsl(210 85% 45%) 100%) !important;
+    color: white !important;
   }
   .platform-other { 
-    background: linear-gradient(135deg, hsl(220 15% 70%) 0%, hsl(215 15% 65%) 100%);
-    color: white;
+    background: linear-gradient(135deg, hsl(220 15% 70%) 0%, hsl(215 15% 65%) 100%) !important;
+    color: white !important;
   }
 
   .sidebar-transition {
