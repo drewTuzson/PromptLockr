@@ -3,6 +3,10 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema } from "@shared/schema";
 import { z } from "zod";
+import { ReplitDBAdapter } from "../lib/db/replit-db";
+import { AuthService } from "../lib/auth/jwt-auth";
+
+const db = new ReplitDBAdapter();
 
 function requireAuth(req: any): { userId: string; email: string } {
   const authHeader = req.headers.authorization;
@@ -11,7 +15,7 @@ function requireAuth(req: any): { userId: string; email: string } {
   }
   
   const token = authHeader.slice(7);
-  const decoded = storage.verifyToken(token);
+  const decoded = AuthService.verifyToken(token);
   if (!decoded) {
     throw new Error('Invalid token');
   }
@@ -23,25 +27,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
   app.post("/api/auth/signup", async (req, res) => {
     try {
-      const { email, password } = signupSchema.parse(req.body);
-      
-      // Check if user exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(409).json({ message: "User already exists" });
+      const { email, password } = req.body;
+
+      // Validate input
+      if (!email || !password) {
+        return res.status(400).json({
+          error: 'Email and password are required'
+        });
       }
-      
+
+      // Check if user exists
+      const existingUser = await db.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(409).json({
+          error: 'User already exists'
+        });
+      }
+
       // Create user
-      const passwordHash = await storage.hashPassword(password);
-      const user = await storage.createUser({
+      const passwordHash = await AuthService.hashPassword(password);
+      const user = await db.createUser({
         email,
         passwordHash,
-        preferences: { theme: 'light' }
+        createdAt: new Date().toISOString(),
+        preferences: {
+          theme: 'light'
+        }
       });
-      
+
       // Generate token
-      const token = storage.generateToken(user.id, user.email);
-      
+      const token = AuthService.generateToken(user.id, user.email);
+
       res.status(201).json({
         token,
         user: {
@@ -50,34 +66,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
           preferences: user.preferences
         }
       });
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
-        return res.status(400).json({ message: "Invalid input data" });
-      }
+    } catch (error) {
       console.error('Signup error:', error);
-      res.status(500).json({ message: "Failed to create user" });
+      res.status(500).json({
+        error: 'Failed to create user'
+      });
     }
   });
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { email, password } = loginSchema.parse(req.body);
-      
+      const { email, password } = req.body;
+
+      // Validate input
+      if (!email || !password) {
+        return res.status(400).json({
+          error: 'Email and password are required'
+        });
+      }
+
       // Find user
-      const user = await storage.getUserByEmail(email);
+      const user = await db.getUserByEmail(email);
       if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        return res.status(401).json({
+          error: 'Invalid credentials'
+        });
       }
-      
+
       // Verify password
-      const isValidPassword = await storage.verifyPassword(password, user.passwordHash);
+      const isValidPassword = await AuthService.verifyPassword(password, user.passwordHash);
       if (!isValidPassword) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        return res.status(401).json({
+          error: 'Invalid credentials'
+        });
       }
-      
+
       // Generate token
-      const token = storage.generateToken(user.id, user.email);
-      
+      const token = AuthService.generateToken(user.id, user.email);
+
       res.json({
         token,
         user: {
@@ -86,12 +112,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           preferences: user.preferences
         }
       });
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
-        return res.status(400).json({ message: "Invalid input data" });
-      }
+    } catch (error) {
       console.error('Login error:', error);
-      res.status(500).json({ message: "Failed to login" });
+      res.status(500).json({
+        error: 'Failed to login'
+      });
     }
   });
 
