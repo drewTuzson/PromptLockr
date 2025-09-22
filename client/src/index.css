@@ -69,6 +69,7 @@
   --sidebar-border: hsl(205.7143 15.7895% 26.0784%);
   --sidebar-ring: hsl(202.8169 89.1213% 53.1373%);
   --hover-bg: #1f2937;
+  --hover-text: #e5e7eb;
 }
 
 @layer base {
