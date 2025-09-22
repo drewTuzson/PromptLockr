@@ -573,13 +573,14 @@ export default function Dashboard() {
                           {/* Tags */}
                           <div className="flex items-center space-x-1 flex-shrink-0">
                             {prompt.tags && prompt.tags.length > 0 && prompt.tags.map((tag, index) => (
-                              <span 
+                              <Badge 
                                 key={index}
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent text-accent-foreground"
-                                data-testid={`tag-${tag}`}
+                                variant="secondary"
+                                className="text-xs px-2 py-1 rounded-md"
+                                data-testid={`tag-${tag}-${index}`}
                               >
                                 {tag}
-                              </span>
+                              </Badge>
                             ))}
                           </div>
                           <div className="text-sm text-muted-foreground flex-shrink-0">
