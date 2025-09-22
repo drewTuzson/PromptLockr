@@ -28,7 +28,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { X } from 'lucide-react';
-import { useCreatePrompt, useUpdatePrompt } from '@/hooks/usePrompts';
+import { useCreatePrompt, useUpdatePrompt, usePrompts } from '@/hooks/usePrompts';
 import { useFolders } from '@/hooks/useFolders';
 import { Prompt } from '@shared/schema';
 
@@ -50,10 +50,12 @@ interface CreatePromptModalProps {
 export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreatePromptModalProps) {
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>(editingPrompt?.tags || []);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
   const { data: folders = [] } = useFolders();
+  const { data: allPrompts = [] } = usePrompts();
   
   const form = useForm<PromptFormData>({
     resolver: zodResolver(promptSchema),
@@ -135,7 +137,42 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
     if (e.key === 'Enter') {
       e.preventDefault();
       addTag();
+      setShowSuggestions(false);
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false);
     }
+  };
+
+  // Get all unique tags from all prompts
+  const getAllUniqueTags = () => {
+    const allTags = allPrompts.flatMap(prompt => prompt.tags || []);
+    return Array.from(new Set(allTags)).filter(tag => tag && tag.length > 0);
+  };
+
+  // Filter suggestions based on current input
+  const getSuggestions = () => {
+    if (!tagInput.trim()) return [];
+    const allUniqueTags = getAllUniqueTags();
+    return allUniqueTags
+      .filter(tag => 
+        tag.toLowerCase().includes(tagInput.toLowerCase()) && 
+        !tags.includes(tag) // Don't suggest already added tags
+      )
+      .slice(0, 5); // Limit to 5 suggestions
+  };
+
+  const suggestions = getSuggestions();
+
+  const handleTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setTagInput(value);
+    setShowSuggestions(value.length > 0);
+  };
+
+  const selectSuggestion = (suggestion: string) => {
+    setTags([...tags, suggestion]);
+    setTagInput('');
+    setShowSuggestions(false);
   };
 
   return (
@@ -274,23 +311,43 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                   </Badge>
                 ))}
               </div>
-              <div className="flex gap-2">
-                <Input
-                  data-testid="input-tag"
-                  placeholder="Add a tag"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyPress={handleTagKeyPress}
-                />
-                <Button
-                  data-testid="button-add-tag"
-                  type="button"
-                  variant="outline"
-                  onClick={addTag}
-                  disabled={!tagInput.trim()}
-                >
-                  Add
-                </Button>
+              <div className="relative">
+                <div className="flex gap-2">
+                  <Input
+                    data-testid="input-tag"
+                    placeholder="Add a tag"
+                    value={tagInput}
+                    onChange={handleTagInputChange}
+                    onKeyDown={handleTagKeyPress}
+                    onFocus={() => setShowSuggestions(tagInput.length > 0)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)} // Delay to allow clicking suggestions
+                  />
+                  <Button
+                    data-testid="button-add-tag"
+                    type="button"
+                    variant="outline"
+                    onClick={addTag}
+                    disabled={!tagInput.trim()}
+                  >
+                    Add
+                  </Button>
+                </div>
+                
+                {/* Autocomplete Suggestions Dropdown */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-background border border-border rounded-md shadow-lg">
+                    {suggestions.map((suggestion, index) => (
+                      <div
+                        key={suggestion}
+                        data-testid={`suggestion-${suggestion}`}
+                        className="px-3 py-2 cursor-pointer hover-bg-consistent transition-colors text-sm border-b border-border last:border-b-0"
+                        onClick={() => selectSuggestion(suggestion)}
+                      >
+                        {suggestion}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

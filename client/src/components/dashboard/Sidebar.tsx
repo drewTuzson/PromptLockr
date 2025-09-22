@@ -114,7 +114,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
                 "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
                 location === '/dashboard' 
                   ? "bg-muted text-foreground" 
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground"
               )}
             >
               <Briefcase className="w-4 h-4" />
@@ -132,7 +132,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
                 "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
                 location === '/dashboard/favorites'
                   ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground"
               )}
             >
               <Heart className="w-4 h-4" />
@@ -150,7 +150,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
                 "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
                 location === '/dashboard/recent'
                   ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground"
               )}
             >
               <Clock className="w-4 h-4" />
@@ -165,7 +165,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
                 "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
                 location === '/dashboard/trash'
                   ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground"
               )}
             >
               <Trash2 className="w-4 h-4" />
@@ -232,7 +232,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
               <Button
                 data-testid="button-new-folder"
                 variant="ghost"
-                className="w-full justify-start space-x-2 px-3 py-2 h-auto text-xs text-muted-foreground hover:text-foreground hover-bg-consistent"
+                className="w-full justify-start space-x-2 px-3 py-2 h-auto text-xs text-muted-foreground hover-bg-consistent"
                 onClick={() => setIsCreatingFolder(true)}
               >
                 <Plus className="w-4 h-4" />

@@ -499,7 +499,7 @@ export default function Dashboard() {
                               onClick={() => handleRestorePrompt(prompt.id)}
                               disabled={restorePrompt.isPending}
                               data-testid={`button-restore-${prompt.id}`}
-                              className="bg-green-600 hover:bg-green-700 text-white"
+                              className="bg-green-600 hover-bg-consistent text-white"
                             >
                               <RotateCcw className="w-4 h-4 mr-1" />
                               Restore
@@ -558,7 +558,19 @@ export default function Dashboard() {
                               {prompt.title}
                             </h3>
                           </div>
-                          <div className="text-sm text-muted-foreground">
+                          {/* Tags */}
+                          <div className="flex items-center space-x-1 flex-shrink-0">
+                            {prompt.tags && prompt.tags.length > 0 && prompt.tags.map((tag, index) => (
+                              <span 
+                                key={index}
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent text-accent-foreground"
+                                data-testid={`tag-${tag}`}
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="text-sm text-muted-foreground flex-shrink-0">
                             {prompt.createdAt ? new Date(prompt.createdAt).toLocaleDateString() : 'No date'}
                           </div>
                         </div>
@@ -665,7 +677,7 @@ export default function Dashboard() {
             <AlertDialogAction
               data-testid="button-confirm-permanent-delete"
               onClick={() => promptToDelete && handlePermanentDeletePrompt(promptToDelete)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover-bg-consistent"
             >
               Delete Forever
             </AlertDialogAction>

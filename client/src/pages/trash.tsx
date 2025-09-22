@@ -113,7 +113,7 @@ export default function TrashPage() {
                   onClick={() => handleRestore(prompt.id)}
                   disabled={restorePrompt.isPending}
                   data-testid={`button-restore-${prompt.id}`}
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  className="bg-green-600 hover-bg-consistent text-white"
                 >
                   <RotateCcw className="w-4 h-4 mr-1" />
                   Restore
@@ -150,7 +150,7 @@ export default function TrashPage() {
             <AlertDialogAction
               data-testid="button-confirm-permanent-delete"
               onClick={() => promptToDelete && handlePermanentDelete(promptToDelete)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover-bg-consistent"
             >
               Delete Forever
             </AlertDialogAction>

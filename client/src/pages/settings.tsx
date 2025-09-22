@@ -38,7 +38,7 @@ export default function Settings() {
                 <Link 
                   to="/dashboard" 
                   data-testid="link-back-dashboard"
-                  className="flex items-center space-x-2 text-muted-foreground hover:text-foreground transition-colors"
+                  className="flex items-center space-x-2 text-muted-foreground hover-bg-consistent"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Back to Dashboard</span>
@@ -70,13 +70,24 @@ export default function Settings() {
               <CardContent className="space-y-6">
                 <div className="flex items-center space-x-4">
                   <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center">
+                    {/* TODO: Post-MVP - Add profile photo upload functionality
+                        - Extend user.preferences schema to include profilePhoto: string (base64)
+                        - Add file input with preview
+                        - Create API endpoint to update user preferences
+                        - Convert uploaded image to base64 and store in preferences
+                        - Display uploaded photo here instead of initial
+                        - Also update profile icon in dashboard header to use photo */}
                     <span className="text-xl font-medium text-primary-foreground">
                       {user?.email.charAt(0).toUpperCase()}
                     </span>
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-semibold text-foreground">{user?.email}</h3>
                     <p className="text-sm text-muted-foreground">Account email</p>
+                  </div>
+                  <div className="text-xs text-muted-foreground bg-muted p-2 rounded border-l-4 border-primary/20">
+                    <strong>TODO (Post-MVP):</strong> Profile photo upload functionality<br/>
+                    <span className="text-xs">Implementation requires schema updates and new API endpoints</span>
                   </div>
                 </div>
 

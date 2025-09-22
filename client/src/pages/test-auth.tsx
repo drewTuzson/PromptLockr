@@ -88,7 +88,7 @@ export default function TestAuth() {
           <button
             data-testid="button-test-health"
             onClick={testHealth}
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+            className="bg-blue-500 text-white px-4 py-2 rounded hover-bg-consistent"
           >
             Test Health Endpoint
           </button>
@@ -111,14 +111,14 @@ export default function TestAuth() {
                 <button
                   data-testid="button-test-protected"
                   onClick={testProtectedRoute}
-                  className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                  className="bg-green-500 text-white px-4 py-2 rounded hover-bg-consistent"
                 >
                   Test Protected Route
                 </button>
                 <button
                   data-testid="button-clear-token"
                   onClick={clearToken}
-                  className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                  className="bg-red-500 text-white px-4 py-2 rounded hover-bg-consistent"
                 >
                   Clear Token
                 </button>
@@ -152,7 +152,7 @@ export default function TestAuth() {
             <button
               data-testid="button-test-signup"
               onClick={testSignup}
-              className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+              className="bg-green-500 text-white px-4 py-2 rounded hover-bg-consistent"
             >
               Test Signup
             </button>
@@ -187,7 +187,7 @@ export default function TestAuth() {
             <button
               data-testid="button-test-login"
               onClick={testLogin}
-              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+              className="bg-blue-500 text-white px-4 py-2 rounded hover-bg-consistent"
             >
               Test Login
             </button>

@@ -125,7 +125,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
     <>
       <div
         data-testid={`folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
-        className="group flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-muted transition-colors"
+        className="group flex items-center space-x-2 px-3 py-2 rounded-lg hover-bg-consistent transition-colors"
       >
         <Link 
           to={`/dashboard/folder/${folder.id}`}
