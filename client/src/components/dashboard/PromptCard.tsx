@@ -17,17 +17,25 @@ import { cn } from '@/lib/utils';
 interface PromptCardProps {
   prompt: Prompt;
   onEdit?: (prompt: Prompt) => void;
+  onClick?: (prompt: Prompt) => void;
 }
 
-const platformClasses = {
+const platformClasses: Record<string, string> = {
   ChatGPT: 'platform-chatgpt',
   Claude: 'platform-claude',
+  Perplexity: 'platform-perplexity',
+  Gemini: 'platform-gemini',
+  Mistral: 'platform-mistral',
   Midjourney: 'platform-midjourney',
   'DALL-E': 'platform-dalle',
-  Other: 'platform-other',
+  'Stable Diffusion': 'platform-stablediffusion',
+  'Leonardo AI': 'platform-leonardo',
+  Llama: 'platform-llama',
+  Cohere: 'platform-cohere',
+  'Custom/Other': 'platform-other',
 };
 
-export function PromptCard({ prompt, onEdit }: PromptCardProps) {
+export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
@@ -85,6 +93,7 @@ export function PromptCard({ prompt, onEdit }: PromptCardProps) {
       className="shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onClick={() => onClick?.(prompt)}
     >
       <CardContent className="p-6">
         <div className="flex items-start justify-between mb-4">

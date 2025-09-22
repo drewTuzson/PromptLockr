@@ -27,7 +27,7 @@ export const prompts = pgTable("prompts", {
   userId: varchar("user_id").notNull(),
   title: text("title").notNull(),
   content: text("content").notNull(),
-  platform: text("platform").$type<'ChatGPT' | 'Claude' | 'Midjourney' | 'DALL-E' | 'Other'>().notNull(),
+  platform: text("platform").$type<'ChatGPT' | 'Claude' | 'Perplexity' | 'Gemini' | 'Mistral' | 'Midjourney' | 'DALL-E' | 'Stable Diffusion' | 'Leonardo AI' | 'Llama' | 'Cohere' | 'Custom/Other'>().notNull(),
   tags: text("tags").$type<string[]>().array(),
   folderId: varchar("folder_id"),
   isFavorite: boolean("is_favorite").default(false),

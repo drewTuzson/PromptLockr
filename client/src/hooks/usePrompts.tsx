@@ -85,6 +85,8 @@ export function useDeletePrompt() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/prompts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts/favorites'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts/recent'] });
       toast({
         title: "Prompt deleted",
         description: "The prompt has been removed.",

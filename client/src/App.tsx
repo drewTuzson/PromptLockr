@@ -8,6 +8,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import Login from "@/pages/login";
 import Signup from "@/pages/signup";
 import Dashboard from "@/pages/dashboard";
+import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 import TestAuth from "@/pages/test-auth";
 
@@ -19,6 +20,7 @@ function Router() {
       <Route path="/signup" component={Signup} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/dashboard/:view" component={Dashboard} />
+      <Route path="/settings" component={Settings} />
       <Route path="/test-auth" component={TestAuth} />
       {/* Fallback to 404 */}
       <Route component={NotFound} />

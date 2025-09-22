@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { X } from 'lucide-react';
 import { useCreatePrompt, useUpdatePrompt } from '@/hooks/usePrompts';
+import { useFolders } from '@/hooks/useFolders';
 import { Prompt } from '@shared/schema';
 
 import { createPromptSchema } from '@shared/schema';
@@ -52,6 +53,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
   
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
+  const { data: folders = [] } = useFolders();
   
   const form = useForm<PromptFormData>({
     resolver: zodResolver(promptSchema),
@@ -99,7 +101,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
         await updatePrompt.mutateAsync({
           id: editingPrompt.id,
           ...promptData,
-          platform: promptData.platform as 'ChatGPT' | 'Claude' | 'Midjourney' | 'DALL-E' | 'Other',
+          platform: promptData.platform as 'ChatGPT' | 'Claude' | 'Perplexity' | 'Gemini' | 'Mistral' | 'Midjourney' | 'DALL-E' | 'Stable Diffusion' | 'Leonardo AI' | 'Llama' | 'Cohere' | 'Custom/Other',
         });
       } else {
         await createPrompt.mutateAsync(promptData);
@@ -183,9 +185,46 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                       <SelectContent>
                         <SelectItem value="ChatGPT">ChatGPT</SelectItem>
                         <SelectItem value="Claude">Claude</SelectItem>
+                        <SelectItem value="Perplexity">Perplexity</SelectItem>
+                        <SelectItem value="Gemini">Gemini</SelectItem>
+                        <SelectItem value="Mistral">Mistral</SelectItem>
                         <SelectItem value="Midjourney">Midjourney</SelectItem>
                         <SelectItem value="DALL-E">DALL-E</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
+                        <SelectItem value="Stable Diffusion">Stable Diffusion</SelectItem>
+                        <SelectItem value="Leonardo AI">Leonardo AI</SelectItem>
+                        <SelectItem value="Llama">Llama</SelectItem>
+                        <SelectItem value="Cohere">Cohere</SelectItem>
+                        <SelectItem value="Custom/Other">Custom/Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="folderId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Folder (Optional)</FormLabel>
+                  <FormControl>
+                    <Select
+                      data-testid="select-folder"
+                      value={field.value || "none"}
+                      onValueChange={(value) => field.onChange(value === "none" ? null : value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a folder" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No Folder</SelectItem>
+                        {folders.map((folder) => (
+                          <SelectItem key={folder.id} value={folder.id}>
+                            {folder.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </FormControl>

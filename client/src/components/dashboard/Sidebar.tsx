@@ -12,27 +12,27 @@ import {
   Sun,
   Moon,
   Settings,
-  LogOut
+  LogOut,
+  Check,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/components/ui/theme-provider';
 import { usePrompts, useFavoritePrompts, useRecentPrompts } from '@/hooks/usePrompts';
-import { useFolders } from '@/hooks/useFolders';
+import { useFolders, useCreateFolder } from '@/hooks/useFolders';
 import { FolderItem } from './FolderItem';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
   onCreatePrompt: () => void;
   onImport: () => void;
-  platformFilters: Record<string, boolean>;
-  setPlatformFilters: (filters: Record<string, boolean>) => void;
   className?: string;
 }
 
-export function Sidebar({ onCreatePrompt, onImport, platformFilters, setPlatformFilters, className }: SidebarProps) {
+export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
   const [location] = useLocation();
   const { logout, user } = useAuth();
   const { theme, setTheme } = useTheme();
@@ -41,19 +41,36 @@ export function Sidebar({ onCreatePrompt, onImport, platformFilters, setPlatform
   const { data: favoritePrompts = [] } = useFavoritePrompts();
   const { data: recentPrompts = [] } = useRecentPrompts();
   const { data: folders = [] } = useFolders();
+  const createFolder = useCreateFolder();
   
-  // Platform filters are now managed by parent Dashboard component
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
 
-  const getPlatformCount = (platform: string) => {
-    return allPrompts.filter(p => p.platform === platform).length;
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+    
+    try {
+      await createFolder.mutateAsync({ name: newFolderName.trim() });
+      setNewFolderName('');
+      setIsCreatingFolder(false);
+    } catch (error) {
+      // Error is handled by the mutation hook
+    }
   };
 
-  const togglePlatformFilter = (platform: string) => {
-    setPlatformFilters({
-      ...platformFilters,
-      [platform]: !platformFilters[platform]
-    });
+  const handleCancelCreate = () => {
+    setNewFolderName('');
+    setIsCreatingFolder(false);
   };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleCreateFolder();
+    } else if (e.key === 'Escape') {
+      handleCancelCreate();
+    }
+  };
+
 
   const toggleTheme = () => {
     setTheme(theme === 'light' ? 'dark' : 'light');
@@ -165,6 +182,49 @@ export function Sidebar({ onCreatePrompt, onImport, platformFilters, setPlatform
                 />
               );
             })}
+            {isCreatingFolder ? (
+              <div className="flex items-center space-x-2 px-3 py-2">
+                <Folder className="w-4 h-4 text-muted-foreground" />
+                <Input
+                  data-testid="input-new-folder-name"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={handleKeyPress}
+                  placeholder="Folder name"
+                  className="h-6 text-xs border-none bg-transparent p-0 focus-visible:ring-0"
+                  autoFocus
+                />
+                <Button
+                  data-testid="button-save-folder"
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleCreateFolder}
+                  disabled={createFolder.isPending || !newFolderName.trim()}
+                  className="h-6 w-6 p-1"
+                >
+                  <Check className="w-3 h-3" />
+                </Button>
+                <Button
+                  data-testid="button-cancel-folder"
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleCancelCreate}
+                  className="h-6 w-6 p-1"
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                data-testid="button-new-folder"
+                variant="ghost"
+                className="w-full justify-start space-x-2 px-3 py-2 h-auto text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setIsCreatingFolder(true)}
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Folder</span>
+              </Button>
+            )}
             {folders.length === 0 && (
               <div className="text-xs text-muted-foreground px-3 py-2">
                 No folders yet
@@ -173,30 +233,6 @@ export function Sidebar({ onCreatePrompt, onImport, platformFilters, setPlatform
           </div>
         </div>
 
-        {/* Platform Filters */}
-        <div className="space-y-2">
-          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            Platforms
-          </div>
-          <div className="space-y-2">
-            {Object.entries(platformFilters).map(([platform, checked]) => (
-              <label key={platform} className="flex items-center space-x-3 cursor-pointer">
-                <Checkbox
-                  data-testid={`checkbox-${platform.toLowerCase()}`}
-                  checked={checked}
-                  onCheckedChange={() => togglePlatformFilter(platform)}
-                  className="rounded border-border text-primary focus:ring-ring"
-                />
-                <div className={`platform-${platform.toLowerCase().replace('-', '')} text-xs px-2 py-1 rounded-md`}>
-                  {platform}
-                </div>
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {getPlatformCount(platform)}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
 
         {/* User Actions */}
         <div className="border-t border-border pt-6 space-y-2">
@@ -214,9 +250,12 @@ export function Sidebar({ onCreatePrompt, onImport, platformFilters, setPlatform
             data-testid="button-settings"
             variant="ghost"
             className="w-full justify-start space-x-3"
+            asChild
           >
-            <Settings className="w-4 h-4" />
-            <span>Settings</span>
+            <Link to="/settings">
+              <Settings className="w-4 h-4" />
+              <span>Settings</span>
+            </Link>
           </Button>
           
           <Button

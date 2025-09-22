@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/dashboard/Sidebar';
 import { SearchBar } from '@/components/dashboard/SearchBar';
 import { PromptCard } from '@/components/dashboard/PromptCard';
 import { CreatePromptModal } from '@/components/dashboard/CreatePromptModal';
+import { PromptDetailModal } from '@/components/dashboard/PromptDetailModal';
 import { RequireAuth } from '@/components/auth/AuthProvider';
 import { usePrompts, useFavoritePrompts, useRecentPrompts } from '@/hooks/usePrompts';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -20,12 +21,7 @@ export default function Dashboard() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | undefined>();
   const [searchQuery, setSearchQuery] = useState('');
-  const [platformFilters, setPlatformFilters] = useState({
-    ChatGPT: true,
-    Claude: true,
-    Midjourney: true,
-    'DALL-E': true,
-  });
+  const [detailPrompt, setDetailPrompt] = useState<Prompt | null>(null);
   
   const isMobile = useIsMobile();
   
@@ -52,13 +48,8 @@ export default function Dashboard() {
       isLoading = allLoading;
   }
   
-  // Apply platform filtering to prompts (except for favorites view)
-  const prompts = view === 'favorites' ? sourcePrompts : sourcePrompts.filter(prompt => {
-    const selectedPlatforms = Object.entries(platformFilters)
-      .filter(([_, isSelected]) => isSelected)
-      .map(([platform]) => platform);
-    return selectedPlatforms.includes(prompt.platform);
-  });
+  // Use source prompts directly without platform filtering
+  const prompts = sourcePrompts;
   
   // Get page title based on view
   const getPageTitle = () => {
@@ -192,8 +183,6 @@ export default function Dashboard() {
           <Sidebar
             onCreatePrompt={handleCreatePrompt}
             onImport={handleImport}
-            platformFilters={platformFilters}
-            setPlatformFilters={setPlatformFilters}
             className={cn(
               "lg:translate-x-0 fixed lg:relative z-30",
               isMobile && sidebarOpen ? "translate-x-0" : isMobile ? "-translate-x-full" : ""
@@ -292,6 +281,7 @@ export default function Dashboard() {
                       key={prompt.id}
                       prompt={prompt}
                       onEdit={handleEditPrompt}
+                      onClick={setDetailPrompt}
                     />
                   ))}
                 </div>
@@ -320,6 +310,17 @@ export default function Dashboard() {
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         editingPrompt={editingPrompt}
+      />
+
+      {/* Prompt Detail Modal */}
+      <PromptDetailModal
+        prompt={detailPrompt}
+        isOpen={!!detailPrompt}
+        onClose={() => setDetailPrompt(null)}
+        onEdit={(prompt) => {
+          setEditingPrompt(prompt);
+          setCreateModalOpen(true);
+        }}
       />
     </RequireAuth>
   );
