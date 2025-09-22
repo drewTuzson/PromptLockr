@@ -161,7 +161,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
             <DropdownMenuItem
               data-testid={`menu-delete-folder-${folder.id}`}
               onClick={() => setShowDeleteDialog(true)}
-              className="cursor-pointer text-destructive focus:text-destructive"
+              className="cursor-pointer text-destructive focus:text-destructive hover:bg-destructive hover:text-destructive-foreground"
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Delete

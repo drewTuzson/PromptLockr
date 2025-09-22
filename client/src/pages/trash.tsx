@@ -150,7 +150,7 @@ export default function TrashPage() {
             <AlertDialogAction
               data-testid="button-confirm-permanent-delete"
               onClick={() => promptToDelete && handlePermanentDelete(promptToDelete)}
-              className="bg-destructive text-destructive-foreground hover-bg-consistent"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete Forever
             </AlertDialogAction>

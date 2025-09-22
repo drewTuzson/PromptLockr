@@ -162,7 +162,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
                     e.stopPropagation();
                     handleDelete();
                   }}
-                  className="text-destructive"
+                  className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
                   Delete
