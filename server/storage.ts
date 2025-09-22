@@ -236,7 +236,7 @@ export class ReplitStorage implements IStorage {
       userId: insertPrompt.userId,
       title: insertPrompt.title,
       content: insertPrompt.content,
-      platform: insertPrompt.platform as 'ChatGPT' | 'Claude' | 'Midjourney' | 'DALL-E' | 'Other',
+      platform: insertPrompt.platform as 'ChatGPT' | 'Claude' | 'Perplexity' | 'Gemini' | 'Mistral' | 'Midjourney' | 'DALL-E' | 'Stable Diffusion' | 'Leonardo AI' | 'Llama' | 'Cohere' | 'Custom/Other',
       tags: (insertPrompt.tags || []) as string[],
       folderId: insertPrompt.folderId || undefined,
       isFavorite: insertPrompt.isFavorite || false,
@@ -254,16 +254,22 @@ export class ReplitStorage implements IStorage {
     const userId = this.promptUserMap.get(id);
     if (!userId) return undefined;
     
-    const prompt = await this.replitDB.updatePrompt(userId, id, {
-      title: updates.title,
-      content: updates.content,
-      platform: updates.platform as 'ChatGPT' | 'Claude' | 'Midjourney' | 'DALL-E' | 'Other' | undefined,
-      tags: updates.tags ? (updates.tags as string[]) : undefined,
-      folderId: updates.folderId || undefined,
-      isFavorite: updates.isFavorite ?? undefined,
+    // Only include fields that are actually being updated
+    const updateData: Partial<any> = {
       lastAccessed: new Date().toISOString(),
-      ...(updates.content && { charCount: updates.content.length })
-    });
+    };
+    
+    if (updates.title !== undefined) updateData.title = updates.title;
+    if (updates.content !== undefined) {
+      updateData.content = updates.content;
+      updateData.charCount = updates.content.length;
+    }
+    if (updates.platform !== undefined) updateData.platform = updates.platform;
+    if (updates.tags !== undefined) updateData.tags = updates.tags;
+    if (updates.folderId !== undefined) updateData.folderId = updates.folderId;
+    if (updates.isFavorite !== undefined) updateData.isFavorite = updates.isFavorite;
+    
+    const prompt = await this.replitDB.updatePrompt(userId, id, updateData);
     
     if (!prompt) return undefined;
     return this.convertPromptFromReplit(prompt);
@@ -273,7 +279,30 @@ export class ReplitStorage implements IStorage {
     const userId = this.promptUserMap.get(id);
     if (!userId) return false;
     
+    // Soft delete - move to trash
     const result = await this.replitDB.deletePrompt(userId, id);
+    return result;
+  }
+
+  async getTrashedPrompts(userId: string): Promise<Prompt[]> {
+    const prompts = await this.replitDB.getTrashedPrompts(userId);
+    // Store mappings for future operations
+    prompts.forEach(p => this.promptUserMap.set(p.id, p.userId));
+    return prompts.map(p => this.convertPromptFromReplit(p));
+  }
+
+  async restorePrompt(id: string): Promise<boolean> {
+    const userId = this.promptUserMap.get(id);
+    if (!userId) return false;
+    
+    return await this.replitDB.restorePrompt(userId, id);
+  }
+
+  async permanentlyDeletePrompt(id: string): Promise<boolean> {
+    const userId = this.promptUserMap.get(id);
+    if (!userId) return false;
+    
+    const result = await this.replitDB.permanentlyDeletePrompt(userId, id);
     if (result) {
       this.promptUserMap.delete(id);
     }
@@ -314,7 +343,8 @@ export class ReplitStorage implements IStorage {
       isFavorite: prompt.isFavorite,
       charCount: prompt.charCount.toString(),
       createdAt: new Date(prompt.createdAt),
-      lastAccessed: new Date(prompt.lastAccessed)
+      lastAccessed: new Date(prompt.lastAccessed),
+      trashedAt: prompt.trashedAt ? new Date(prompt.trashedAt) : null
     };
   }
 

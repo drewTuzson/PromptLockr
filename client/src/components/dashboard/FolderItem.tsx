@@ -8,6 +8,7 @@ import {
   Check,
   X 
 } from 'lucide-react';
+import { Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -124,12 +125,17 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
     <>
       <div
         data-testid={`folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
-        className="group flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+        className="group flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-muted transition-colors"
       >
-        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-        <Folder className="w-4 h-4 text-muted-foreground" />
-        <span className="text-sm flex-1">{folder.name}</span>
-        <span className="text-xs text-muted-foreground">{promptCount}</span>
+        <Link 
+          to={`/dashboard/folder/${folder.id}`}
+          className="flex items-center space-x-2 flex-1 cursor-pointer"
+        >
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          <Folder className="w-4 h-4 text-muted-foreground" />
+          <span className="text-sm flex-1">{folder.name}</span>
+          <span className="text-xs text-muted-foreground">{promptCount}</span>
+        </Link>
         
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -138,6 +144,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => e.preventDefault()} // Prevent navigation when clicking menu
             >
               <MoreHorizontal className="w-3 h-3" />
             </Button>

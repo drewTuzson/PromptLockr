@@ -219,6 +219,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Trash/Recycle Bin routes (must come before parameterized routes)
+  app.get("/api/prompts/trash", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      console.log('Fetching trashed prompts for user:', userId);
+      const trashedPrompts = await storage.getTrashedPrompts(userId);
+      console.log('Found trashed prompts:', trashedPrompts.length);
+      res.json(trashedPrompts);
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching trashed prompts:', error);
+      res.status(500).json({ message: "Failed to fetch trashed prompts" });
+    }
+  });
+
+  app.post("/api/prompts/:id/restore", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const existing = await storage.getPrompt(req.params.id);
+      
+      if (!existing || existing.userId !== userId) {
+        return res.status(404).json({ message: "Prompt not found" });
+      }
+      
+      const success = await storage.restorePrompt(req.params.id);
+      if (success) {
+        res.json({ message: "Prompt restored successfully" });
+      } else {
+        res.status(500).json({ message: "Failed to restore prompt" });
+      }
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error restoring prompt:', error);
+      res.status(500).json({ message: "Failed to restore prompt" });
+    }
+  });
+
+  app.delete("/api/prompts/:id/permanent", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const existing = await storage.getPrompt(req.params.id);
+      
+      if (!existing || existing.userId !== userId) {
+        return res.status(404).json({ message: "Prompt not found" });
+      }
+      
+      const success = await storage.permanentlyDeletePrompt(req.params.id);
+      if (success) {
+        res.json({ message: "Prompt permanently deleted" });
+      } else {
+        res.status(500).json({ message: "Failed to permanently delete prompt" });
+      }
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error permanently deleting prompt:', error);
+      res.status(500).json({ message: "Failed to permanently delete prompt" });
+    }
+  });
+
   app.get("/api/prompts/:id", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
@@ -268,13 +333,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/prompts/:id", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
+      console.log('Deleting prompt:', req.params.id, 'for user:', userId);
       const existing = await storage.getPrompt(req.params.id);
       
       if (!existing || existing.userId !== userId) {
+        console.log('Prompt not found or not owned by user');
         return res.status(404).json({ message: "Prompt not found" });
       }
       
+      console.log('Moving prompt to trash:', existing.title);
       await storage.deletePrompt(req.params.id);
+      console.log('Prompt moved to trash successfully');
       res.json({ message: "Prompt deleted successfully" });
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
@@ -284,7 +353,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to delete prompt" });
     }
   });
-
 
   // Folders routes
   app.get("/api/folders", async (req, res) => {

@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/components/ui/theme-provider';
-import { usePrompts, useFavoritePrompts, useRecentPrompts } from '@/hooks/usePrompts';
+import { usePrompts, useFavoritePrompts, useRecentPrompts, useTrashedPrompts } from '@/hooks/usePrompts';
 import { useFolders, useCreateFolder } from '@/hooks/useFolders';
 import { FolderItem } from './FolderItem';
 import { cn } from '@/lib/utils';
@@ -40,6 +40,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
   const { data: allPrompts = [] } = usePrompts();
   const { data: favoritePrompts = [] } = useFavoritePrompts();
   const { data: recentPrompts = [] } = useRecentPrompts();
+  const { data: trashedPrompts = [] } = useTrashedPrompts();
   const { data: folders = [] } = useFolders();
   const createFolder = useCreateFolder();
   
@@ -156,13 +157,23 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             </div>
           </Link>
           
-          <div className="flex items-center space-x-3 px-3 py-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer">
-            <Trash2 className="w-4 h-4" />
-            <span>Trash</span>
-            <Badge variant="secondary" className="ml-auto text-xs px-2 py-1 rounded-full">
-              0
-            </Badge>
-          </div>
+          <Link href="/dashboard/trash" className="block">
+            <div
+              data-testid="link-trash"
+              className={cn(
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors",
+                location === '/dashboard/trash'
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Trash</span>
+              <Badge variant="secondary" className="ml-auto text-xs px-2 py-1 rounded-full">
+                {trashedPrompts.length}
+              </Badge>
+            </div>
+          </Link>
         </nav>
 
         {/* Folders */}

@@ -87,9 +87,10 @@ export function useDeletePrompt() {
       queryClient.invalidateQueries({ queryKey: ['/api/prompts'] });
       queryClient.invalidateQueries({ queryKey: ['/api/prompts/favorites'] });
       queryClient.invalidateQueries({ queryKey: ['/api/prompts/recent'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts/trash'] });
       toast({
-        title: "Prompt deleted",
-        description: "The prompt has been removed.",
+        title: "Prompt moved to trash",
+        description: "The prompt has been moved to trash and can be restored.",
       });
     },
     onError: (error: Error) => {
@@ -128,6 +129,76 @@ export function useRecentPrompts() {
         throw new Error('Failed to fetch recent prompts');
       }
       return res.json();
+    },
+  });
+}
+
+export function useTrashedPrompts() {
+  return useQuery<Prompt[]>({
+    queryKey: ['/api/prompts/trash'],
+    queryFn: async () => {
+      const res = await fetch('/api/prompts/trash', {
+        headers: AuthService.getAuthHeaders(),
+      });
+      if (!res.ok) {
+        throw new Error('Failed to fetch trashed prompts');
+      }
+      return res.json();
+    },
+  });
+}
+
+export function useRestorePrompt() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest('POST', `/api/prompts/${id}/restore`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts/trash'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts/favorites'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts/recent'] });
+      toast({
+        title: "Prompt restored",
+        description: "The prompt has been restored from trash.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Failed to restore prompt",
+        description: error.message,
+      });
+    },
+  });
+}
+
+export function usePermanentlyDeletePrompt() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest('DELETE', `/api/prompts/${id}/permanent`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/prompts/trash'] });
+      toast({
+        title: "Prompt permanently deleted",
+        description: "The prompt has been permanently removed.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Failed to permanently delete prompt",
+        description: error.message,
+      });
     },
   });
 }

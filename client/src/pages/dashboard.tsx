@@ -1,27 +1,43 @@
 import { useState } from 'react';
-import { Menu, Filter, Download, RotateCcw } from 'lucide-react';
-import { useRoute } from 'wouter';
+import { Menu, Filter, Download, RotateCcw, ArrowLeft, Trash2 } from 'lucide-react';
+import { useRoute, Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/dashboard/Sidebar';
 import { SearchBar } from '@/components/dashboard/SearchBar';
 import { PromptCard } from '@/components/dashboard/PromptCard';
 import { CreatePromptModal } from '@/components/dashboard/CreatePromptModal';
 import { PromptDetailModal } from '@/components/dashboard/PromptDetailModal';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { RequireAuth } from '@/components/auth/AuthProvider';
-import { usePrompts, useFavoritePrompts, useRecentPrompts } from '@/hooks/usePrompts';
+import { usePrompts, useFavoritePrompts, useRecentPrompts, useTrashedPrompts, useRestorePrompt, usePermanentlyDeletePrompt } from '@/hooks/usePrompts';
+import { useFolders } from '@/hooks/useFolders';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { Prompt } from '@shared/schema';
+import { Prompt, Folder } from '@shared/schema';
 import { cn } from '@/lib/utils';
 
 export default function Dashboard() {
-  const [match, params] = useRoute('/dashboard/:view?');
-  const view = params?.view || 'all';
+  // Check for folder route first, then fall back to view route
+  const [folderMatch, folderParams] = useRoute('/dashboard/folder/:folderId');
+  const [viewMatch, viewParams] = useRoute('/dashboard/:view?');
+  
+  const view = folderMatch ? 'folder' : (viewParams?.view || 'all');
+  const folderId = folderParams?.folderId;
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | undefined>();
   const [searchQuery, setSearchQuery] = useState('');
   const [detailPrompt, setDetailPrompt] = useState<Prompt | null>(null);
+  const [promptToDelete, setPromptToDelete] = useState<string | null>(null);
   
   const isMobile = useIsMobile();
   
@@ -29,6 +45,12 @@ export default function Dashboard() {
   const { data: allPrompts = [], isLoading: allLoading } = usePrompts(searchQuery);
   const { data: favoritePrompts = [], isLoading: favoritesLoading } = useFavoritePrompts();
   const { data: recentPrompts = [], isLoading: recentLoading } = useRecentPrompts();
+  const { data: trashedPrompts = [], isLoading: trashedLoading } = useTrashedPrompts();
+  const { data: folders = [] } = useFolders();
+  
+  // Trash actions
+  const restorePrompt = useRestorePrompt();
+  const permanentlyDeletePrompt = usePermanentlyDeletePrompt();
   
   // Determine which prompts to show based on view
   let sourcePrompts: Prompt[] = [];
@@ -43,6 +65,15 @@ export default function Dashboard() {
       sourcePrompts = recentPrompts;
       isLoading = recentLoading;
       break;
+    case 'trash':
+      sourcePrompts = trashedPrompts;
+      isLoading = trashedLoading;
+      break;
+    case 'folder':
+      // Filter prompts by the specified folder
+      sourcePrompts = allPrompts.filter(p => p.folderId === folderId);
+      isLoading = allLoading;
+      break;
     default:
       sourcePrompts = allPrompts;
       isLoading = allLoading;
@@ -51,6 +82,9 @@ export default function Dashboard() {
   // Use source prompts directly without platform filtering
   const prompts = sourcePrompts;
   
+  // Get current folder name if in folder view
+  const currentFolder = folderId ? folders.find(f => f.id === folderId) : null;
+  
   // Get page title based on view
   const getPageTitle = () => {
     switch (view) {
@@ -58,6 +92,10 @@ export default function Dashboard() {
         return 'Favorites';
       case 'recent':
         return 'Recent Prompts';
+      case 'trash':
+        return 'Trash';
+      case 'folder':
+        return currentFolder ? `Folder: ${currentFolder.name}` : 'Folder';
       default:
         return 'All Prompts';
     }
@@ -69,6 +107,10 @@ export default function Dashboard() {
         return 'Your favorited prompts';
       case 'recent':
         return 'Recently accessed prompts';
+      case 'trash':
+        return 'Deleted prompts that can be restored or permanently removed';
+      case 'folder':
+        return currentFolder ? `Prompts in "${currentFolder.name}"` : 'Folder prompts';
       default:
         return 'Manage and organize your AI prompts';
     }
@@ -82,6 +124,23 @@ export default function Dashboard() {
   const handleEditPrompt = (prompt: Prompt) => {
     setEditingPrompt(prompt);
     setCreateModalOpen(true);
+  };
+
+  const handleRestorePrompt = async (promptId: string) => {
+    try {
+      await restorePrompt.mutateAsync(promptId);
+    } catch (error) {
+      // Error handling is done in the hook
+    }
+  };
+
+  const handlePermanentDeletePrompt = async (promptId: string) => {
+    try {
+      await permanentlyDeletePrompt.mutateAsync(promptId);
+      setPromptToDelete(null);
+    } catch (error) {
+      // Error handling is done in the hook
+    }
   };
 
   const handleExport = async () => {
@@ -201,9 +260,24 @@ export default function Dashboard() {
           <main className="flex-1 p-6 lg:p-8">
             {/* Content Header */}
             <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-foreground">{getPageTitle()}</h2>
-                <p className="text-muted-foreground mt-1">{getPageDescription()}</p>
+              <div className="flex items-center space-x-4">
+                {view === 'folder' && (
+                  <Button
+                    data-testid="button-back-to-all-prompts"
+                    variant="ghost"
+                    asChild
+                    className="flex items-center space-x-2"
+                  >
+                    <Link to="/dashboard">
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>Back to All Prompts</span>
+                    </Link>
+                  </Button>
+                )}
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">{getPageTitle()}</h2>
+                  <p className="text-muted-foreground mt-1">{getPageDescription()}</p>
+                </div>
               </div>
               <div className="flex items-center space-x-3">
                 <Button
@@ -276,14 +350,53 @@ export default function Dashboard() {
                   data-testid="prompts-grid"
                   className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
                 >
-                  {prompts.map((prompt) => (
-                    <PromptCard
-                      key={prompt.id}
-                      prompt={prompt}
-                      onEdit={handleEditPrompt}
-                      onClick={setDetailPrompt}
-                    />
-                  ))}
+                  {view === 'trash' ? (
+                    // Render trash-specific prompt cards with restore/delete actions
+                    prompts.map((prompt) => (
+                      <div key={prompt.id} className="relative group">
+                        <PromptCard
+                          prompt={prompt}
+                          onEdit={() => {}} // Disabled for trashed prompts
+                          onClick={setDetailPrompt}
+                        />
+                        
+                        {/* Trash-specific actions overlay */}
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center space-x-2">
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => handleRestorePrompt(prompt.id)}
+                            disabled={restorePrompt.isPending}
+                            data-testid={`button-restore-${prompt.id}`}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            <RotateCcw className="w-4 h-4 mr-1" />
+                            Restore
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => setPromptToDelete(prompt.id)}
+                            disabled={permanentlyDeletePrompt.isPending}
+                            data-testid={`button-permanent-delete-${prompt.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Delete Forever
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    // Render normal prompt cards for other views
+                    prompts.map((prompt) => (
+                      <PromptCard
+                        key={prompt.id}
+                        prompt={prompt}
+                        onEdit={handleEditPrompt}
+                        onClick={setDetailPrompt}
+                      />
+                    ))
+                  )}
                 </div>
 
                 {/* Load More Button */}
@@ -322,6 +435,30 @@ export default function Dashboard() {
           setCreateModalOpen(true);
         }}
       />
+
+      {/* Permanent Delete Confirmation Dialog */}
+      <AlertDialog open={!!promptToDelete} onOpenChange={() => setPromptToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Permanently Delete Prompt</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the prompt and remove all its data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-permanent-delete">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-confirm-permanent-delete"
+              onClick={() => promptToDelete && handlePermanentDeletePrompt(promptToDelete)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Forever
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </RequireAuth>
   );
 }

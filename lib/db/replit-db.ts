@@ -20,12 +20,13 @@ interface PromptDB {
   userId: string;
   title: string;
   content: string;
-  platform: 'ChatGPT' | 'Claude' | 'Midjourney' | 'DALL-E' | 'Other';
+  platform: 'ChatGPT' | 'Claude' | 'Perplexity' | 'Gemini' | 'Mistral' | 'Midjourney' | 'DALL-E' | 'Stable Diffusion' | 'Leonardo AI' | 'Llama' | 'Cohere' | 'Custom/Other';
   tags: string[];
   folderId?: string;
   isFavorite: boolean;
   createdAt: string;
   lastAccessed: string;
+  trashedAt?: string;
   charCount: number;
 }
 
@@ -153,7 +154,27 @@ export class ReplitDBAdapter {
   }
 
   async deletePrompt(userId: string, promptId: string): Promise<boolean> {
+    const existing = await this.getPrompt(userId, promptId);
+    if (!existing) return false;
+    
+    // Soft delete: set trashedAt timestamp
+    const updated = { ...existing, trashedAt: new Date().toISOString() };
+    await db.set(`prompt:${userId}:${promptId}`, JSON.stringify(updated));
+    return true;
+  }
+
+  async permanentlyDeletePrompt(userId: string, promptId: string): Promise<boolean> {
     await db.delete(`prompt:${userId}:${promptId}`);
+    return true;
+  }
+
+  async restorePrompt(userId: string, promptId: string): Promise<boolean> {
+    const existing = await this.getPrompt(userId, promptId);
+    if (!existing) return false;
+    
+    // Remove the trashedAt field to restore
+    const { trashedAt, ...restored } = existing;
+    await db.set(`prompt:${userId}:${promptId}`, JSON.stringify(restored));
     return true;
   }
 
@@ -190,7 +211,10 @@ export class ReplitDBAdapter {
         }
       }
       
-      return prompts.sort((a, b) => 
+      // Filter out trashed prompts (where trashedAt is not null)
+      const activePrompts = prompts.filter(p => !p.trashedAt);
+      
+      return activePrompts.sort((a, b) => 
         new Date(b.lastAccessed).getTime() - new Date(a.lastAccessed).getTime()
       );
     } catch (error) {
@@ -209,6 +233,52 @@ export class ReplitDBAdapter {
       prompt.content.toLowerCase().includes(lowerQuery) ||
       prompt.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
     );
+  }
+
+  // Get trashed prompts (soft-deleted prompts)
+  async getTrashedPrompts(userId: string): Promise<PromptDB[]> {
+    try {
+      const keysResponse = await db.list(`prompt:${userId}:`);
+      const prompts: PromptDB[] = [];
+      
+      // Handle Replit Database wrapped response format for list
+      let keyArray: string[] = [];
+      if (typeof keysResponse === 'object' && 'ok' in keysResponse && keysResponse.ok === true && 'value' in keysResponse) {
+        keyArray = keysResponse.value as string[];
+      } else if (Array.isArray(keysResponse)) {
+        keyArray = keysResponse;
+      } else {
+        console.log('Unexpected keys response format:', keysResponse);
+        return [];
+      }
+      
+      for (const key of keyArray) {
+        const data = await db.get(key);
+        if (data && !(typeof data === 'object' && 'ok' in data && data.ok === false)) {
+          // Handle Replit Database wrapped response format
+          let jsonString;
+          if (typeof data === 'object' && 'ok' in data && data.ok === true && 'value' in data) {
+            jsonString = data.value as string;
+            prompts.push(JSON.parse(jsonString));
+          } else if (typeof data === 'string') {
+            prompts.push(JSON.parse(data));
+          } else {
+            // Direct object return (fallback)
+            prompts.push(data as PromptDB);
+          }
+        }
+      }
+      
+      // Filter to only trashed prompts (where trashedAt is not null)
+      const trashedPrompts = prompts.filter(p => p.trashedAt);
+      
+      return trashedPrompts.sort((a, b) => 
+        new Date(b.trashedAt!).getTime() - new Date(a.trashedAt!).getTime()
+      );
+    } catch (error) {
+      console.error('Error getting trashed prompts:', error);
+      return [];
+    }
   }
 
   // Folder operations

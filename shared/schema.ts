@@ -33,6 +33,7 @@ export const prompts = pgTable("prompts", {
   isFavorite: boolean("is_favorite").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   lastAccessed: timestamp("last_accessed").defaultNow(),
+  trashedAt: timestamp("trashed_at"),
   charCount: varchar("char_count"),
 });
 
