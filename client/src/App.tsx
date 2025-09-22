@@ -9,6 +9,7 @@ import Login from "@/pages/login";
 import Signup from "@/pages/signup";
 import Dashboard from "@/pages/dashboard";
 import NotFound from "@/pages/not-found";
+import TestAuth from "@/pages/test-auth";
 
 function Router() {
   return (
@@ -18,6 +19,7 @@ function Router() {
       <Route path="/signup" component={Signup} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/dashboard/:view" component={Dashboard} />
+      <Route path="/test-auth" component={TestAuth} />
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>

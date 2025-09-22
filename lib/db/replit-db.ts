@@ -52,7 +52,27 @@ export class ReplitDBAdapter {
   async getUserByEmail(email: string): Promise<UserDB | null> {
     try {
       const userData = await db.get(`user:${email}`);
-      return userData ? JSON.parse(userData as any) : null;
+      
+      // Check if userData is null or undefined
+      if (!userData) return null;
+      
+      // Check if Replit Database returned an error object
+      if (typeof userData === 'object' && 'ok' in userData && userData.ok === false) {
+        return null;
+      }
+      
+      // Handle Replit Database wrapped response format
+      let jsonString;
+      if (typeof userData === 'object' && 'ok' in userData && userData.ok === true && 'value' in userData) {
+        jsonString = userData.value as string;
+      } else if (typeof userData === 'string') {
+        jsonString = userData;
+      } else {
+        // Direct object return (fallback)
+        return userData as UserDB;
+      }
+      
+      return JSON.parse(jsonString);
     } catch (error) {
       console.error('Error getting user by email:', error);
       return null;
@@ -61,9 +81,26 @@ export class ReplitDBAdapter {
 
   async getUserById(id: string): Promise<UserDB | null> {
     try {
-      const email = await db.get(`user:id:${id}`);
-      if (!email) return null;
-      return this.getUserByEmail(email as any);
+      const emailData = await db.get(`user:id:${id}`);
+      if (!emailData) return null;
+      
+      // Check if Replit Database returned an error object
+      if (typeof emailData === 'object' && 'ok' in emailData && emailData.ok === false) {
+        return null;
+      }
+      
+      // Handle Replit Database wrapped response format
+      let emailString;
+      if (typeof emailData === 'object' && 'ok' in emailData && emailData.ok === true && 'value' in emailData) {
+        emailString = emailData.value as string;
+      } else if (typeof emailData === 'string') {
+        emailString = emailData;
+      } else {
+        // Direct return (fallback)
+        emailString = emailData as string;
+      }
+      
+      return this.getUserByEmail(emailString);
     } catch (error) {
       console.error('Error getting user by id:', error);
       return null;
@@ -81,7 +118,25 @@ export class ReplitDBAdapter {
   async getPrompt(userId: string, promptId: string): Promise<PromptDB | null> {
     try {
       const data = await db.get(`prompt:${userId}:${promptId}`);
-      return data ? JSON.parse(data as any) : null;
+      if (!data) return null;
+      
+      // Check if Replit Database returned an error object
+      if (typeof data === 'object' && 'ok' in data && data.ok === false) {
+        return null;
+      }
+      
+      // Handle Replit Database wrapped response format
+      let jsonString;
+      if (typeof data === 'object' && 'ok' in data && data.ok === true && 'value' in data) {
+        jsonString = data.value as string;
+      } else if (typeof data === 'string') {
+        jsonString = data;
+      } else {
+        // Direct object return (fallback)
+        return data as PromptDB;
+      }
+      
+      return JSON.parse(jsonString);
     } catch (error) {
       console.error('Error getting prompt:', error);
       return null;
@@ -112,7 +167,19 @@ export class ReplitDBAdapter {
       
       for (const key of keyArray.slice(0, limit)) {
         const data = await db.get(key);
-        if (data) prompts.push(JSON.parse(data as any));
+        if (data && !(typeof data === 'object' && 'ok' in data && data.ok === false)) {
+          // Handle Replit Database wrapped response format
+          let jsonString;
+          if (typeof data === 'object' && 'ok' in data && data.ok === true && 'value' in data) {
+            jsonString = data.value as string;
+            prompts.push(JSON.parse(jsonString));
+          } else if (typeof data === 'string') {
+            prompts.push(JSON.parse(data));
+          } else {
+            // Direct object return (fallback)
+            prompts.push(data as PromptDB);
+          }
+        }
       }
       
       return prompts.sort((a, b) => 
@@ -154,7 +221,19 @@ export class ReplitDBAdapter {
       
       for (const key of keyArray) {
         const data = await db.get(key);
-        if (data) folders.push(JSON.parse(data as any));
+        if (data && !(typeof data === 'object' && 'ok' in data && data.ok === false)) {
+          // Handle Replit Database wrapped response format
+          let jsonString;
+          if (typeof data === 'object' && 'ok' in data && data.ok === true && 'value' in data) {
+            jsonString = data.value as string;
+            folders.push(JSON.parse(jsonString));
+          } else if (typeof data === 'string') {
+            folders.push(JSON.parse(data));
+          } else {
+            // Direct object return (fallback)
+            folders.push(data as FolderDB);
+          }
+        }
       }
       
       return folders;

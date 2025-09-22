@@ -5,8 +5,10 @@ import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema } fro
 import { z } from "zod";
 import { ReplitDBAdapter } from "../lib/db/replit-db";
 import { AuthService } from "../lib/auth/jwt-auth";
+import Database from "@replit/database";
 
 const db = new ReplitDBAdapter();
+const healthDB = new Database();
 
 function requireAuth(req: any): { userId: string; email: string } {
   const authHeader = req.headers.authorization;
@@ -24,6 +26,25 @@ function requireAuth(req: any): { userId: string; email: string } {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Health check route
+  app.get("/api/health", async (req, res) => {
+    try {
+      await healthDB.get('health_check');
+      
+      res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        environment: process.env.NODE_ENV
+      });
+    } catch (error: any) {
+      res.status(503).json({
+        status: 'unhealthy',
+        error: error.message
+      });
+    }
+  });
+
   // Auth routes
   app.post("/api/auth/signup", async (req, res) => {
     try {
