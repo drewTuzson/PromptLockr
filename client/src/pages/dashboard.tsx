@@ -389,7 +389,7 @@ export default function Dashboard() {
                         key={option.value}
                         onClick={() => setPlatformFilter(option.value)}
                         data-testid={`filter-platform-${option.value}`}
-                        className={cn(platformFilter === option.value && "bg-accent")}
+                        className={cn(platformFilter === option.value && "bg-[#0cc991] text-white")}
                       >
                         {option.label}
                       </DropdownMenuItem>
@@ -401,7 +401,7 @@ export default function Dashboard() {
                         key={option.value}
                         onClick={() => setDateFilter(option.value)}
                         data-testid={`filter-date-${option.value}`}
-                        className={cn(dateFilter === option.value && "bg-accent")}
+                        className={cn(dateFilter === option.value && "bg-[#0cc991] text-white")}
                       >
                         {option.label}
                       </DropdownMenuItem>
