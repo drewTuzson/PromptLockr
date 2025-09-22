@@ -31,6 +31,23 @@ import { useFolders } from '@/hooks/useFolders';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Prompt, Folder } from '@shared/schema';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+
+// Platform classes for badge styling
+const platformClasses: Record<string, string> = {
+  ChatGPT: 'platform-chatgpt',
+  Claude: 'platform-claude',
+  Perplexity: 'platform-perplexity',
+  Gemini: 'platform-gemini',
+  Mistral: 'platform-mistral',
+  Midjourney: 'platform-midjourney',
+  'DALL-E': 'platform-dalle',
+  'Stable Diffusion': 'platform-stablediffusion',
+  'Leonardo AI': 'platform-leonardo',
+  Llama: 'platform-llama',
+  Cohere: 'platform-cohere',
+  'Custom/Other': 'platform-other',
+};
 
 export default function Dashboard() {
   // Check for folder route first, then fall back to view route
@@ -499,7 +516,7 @@ export default function Dashboard() {
                               onClick={() => handleRestorePrompt(prompt.id)}
                               disabled={restorePrompt.isPending}
                               data-testid={`button-restore-${prompt.id}`}
-                              className="bg-green-600 hover-bg-consistent text-white"
+                              className="bg-primary text-primary-foreground hover-bg-consistent"
                             >
                               <RotateCcw className="w-4 h-4 mr-1" />
                               Restore
@@ -543,16 +560,11 @@ export default function Dashboard() {
                         data-testid={`list-item-prompt-${prompt.id}`}
                       >
                         <div className="flex items-center space-x-4 flex-1 min-w-0">
-                          <div className={cn(
-                            "px-2 py-1 rounded text-xs font-medium", 
-                            prompt.platform === 'ChatGPT' && "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-                            prompt.platform === 'Claude' && "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
-                            prompt.platform === 'Midjourney' && "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
-                            prompt.platform === 'DALL-E' && "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-                            !['ChatGPT', 'Claude', 'Midjourney', 'DALL-E'].includes(prompt.platform) && "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                          )}>
+                          <Badge 
+                            className={cn("text-xs px-2.5 py-1 rounded-full font-medium hover-bg-consistent", platformClasses[prompt.platform])}
+                          >
                             {prompt.platform}
-                          </div>
+                          </Badge>
                           <div className="flex-1 min-w-0">
                             <h3 className="font-medium text-foreground truncate" data-testid="text-prompt-title">
                               {prompt.title}

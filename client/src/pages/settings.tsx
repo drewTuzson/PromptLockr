@@ -85,10 +85,6 @@ export default function Settings() {
                     <h3 className="font-semibold text-foreground">{user?.email}</h3>
                     <p className="text-sm text-muted-foreground">Account email</p>
                   </div>
-                  <div className="text-xs text-muted-foreground bg-muted p-2 rounded border-l-4 border-primary/20">
-                    <strong>TODO (Post-MVP):</strong> Profile photo upload functionality<br/>
-                    <span className="text-xs">Implementation requires schema updates and new API endpoints</span>
-                  </div>
                 </div>
 
                 <div className="grid gap-4">
@@ -155,7 +151,7 @@ export default function Settings() {
                       data-testid="button-export-data"
                       variant="outline"
                       onClick={handleExportData}
-                      className="flex items-center space-x-2"
+                      className="flex items-center space-x-2 hover-bg-consistent"
                     >
                       <Download className="w-4 h-4" />
                       <span>Export Data</span>
@@ -171,7 +167,7 @@ export default function Settings() {
                       data-testid="button-import-data"
                       variant="outline"
                       onClick={handleImportData}
-                      className="flex items-center space-x-2"
+                      className="flex items-center space-x-2 hover-bg-consistent"
                     >
                       <Upload className="w-4 h-4" />
                       <span>Import Data</span>

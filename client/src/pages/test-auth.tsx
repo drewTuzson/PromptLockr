@@ -111,7 +111,7 @@ export default function TestAuth() {
                 <button
                   data-testid="button-test-protected"
                   onClick={testProtectedRoute}
-                  className="bg-green-500 text-white px-4 py-2 rounded hover-bg-consistent"
+                  className="bg-primary text-primary-foreground px-4 py-2 rounded hover-bg-consistent"
                 >
                   Test Protected Route
                 </button>
@@ -152,7 +152,7 @@ export default function TestAuth() {
             <button
               data-testid="button-test-signup"
               onClick={testSignup}
-              className="bg-green-500 text-white px-4 py-2 rounded hover-bg-consistent"
+              className="bg-primary text-primary-foreground px-4 py-2 rounded hover-bg-consistent"
             >
               Test Signup
             </button>

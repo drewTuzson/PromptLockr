@@ -98,7 +98,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
       <CardContent className="p-6">
         <div className="flex items-start justify-between mb-4">
           <Badge 
-            className={cn("text-xs px-2.5 py-1 rounded-full font-medium", platformClasses[prompt.platform])}
+            className={cn("text-xs px-2.5 py-1 rounded-full font-medium hover-bg-consistent", platformClasses[prompt.platform])}
           >
             {prompt.platform}
           </Badge>

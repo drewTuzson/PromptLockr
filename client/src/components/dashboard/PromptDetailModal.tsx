@@ -162,7 +162,7 @@ export function PromptDetailModal({ prompt, isOpen, onClose, onEdit }: PromptDet
                 disabled={updatePrompt.isPending}
                 className={cn(
                   "flex items-center gap-2",
-                  prompt.isFavorite ? "text-red-500 hover:text-red-600" : ""
+                  prompt.isFavorite ? "text-red-500" : ""
                 )}
               >
                 <Heart className={cn("w-4 h-4", prompt.isFavorite ? "fill-current" : "")} />

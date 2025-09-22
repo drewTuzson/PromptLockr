@@ -86,7 +86,8 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
           <Button
             data-testid="button-new-prompt"
             onClick={onCreatePrompt}
-            className="w-full bg-primary text-primary-foreground py-2.5 px-4 rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center space-x-2"
+            className="w-full py-2.5 px-4 rounded-lg font-medium hover-bg-consistent flex items-center justify-center space-x-2"
+            variant="outline"
           >
             <Plus className="w-4 h-4" />
             <span>New Prompt</span>
@@ -278,7 +279,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             data-testid="button-logout"
             variant="ghost"
             onClick={logout}
-            className="w-full justify-start space-x-3 text-destructive hover:text-destructive hover-bg-consistent"
+            className="w-full justify-start space-x-3 text-destructive hover-bg-consistent"
           >
             <LogOut className="w-4 h-4" />
             <span>Logout</span>

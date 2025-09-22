@@ -33,6 +33,7 @@
   --sidebar-border: hsl(205.0000 25.0000% 90.5882%);
   --sidebar-ring: hsl(202.8169 89.1213% 53.1373%);
   --hover-bg: #f0f5f7;
+  --hover-text: #23272e;
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-serif: 'Georgia', serif;
   --font-mono: 'Consolas', 'Monaco', monospace;
@@ -122,5 +123,6 @@
 
   .hover-bg-consistent:hover {
     background-color: var(--hover-bg) !important;
+    color: var(--hover-text) !important;
   }
 }
