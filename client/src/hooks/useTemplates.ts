@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Template, TemplateVariable, insertTemplateSchema, insertTemplateVariableSchema } from '@shared/schema';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 // Template with variables type for UI components
 export type TemplateWithVariables = Template & {
@@ -37,17 +38,20 @@ export type InstantiateTemplateData = {
 
 // Get all templates
 export function useTemplates() {
+  const { isAuthenticated } = useAuth();
   return useQuery<TemplateWithVariables[]>({
     queryKey: ['/api/templates'],
     staleTime: 1000 * 60 * 5, // 5 minutes
+    enabled: isAuthenticated,
   });
 }
 
 // Get a single template by ID
 export function useTemplate(templateId: string | null) {
+  const { isAuthenticated } = useAuth();
   return useQuery<TemplateWithVariables>({
     queryKey: ['/api/templates', templateId],
-    enabled: !!templateId,
+    enabled: !!templateId && isAuthenticated,
   });
 }
 
@@ -146,14 +150,16 @@ export function useInstantiateTemplate() {
       const res = await apiRequest('POST', '/api/templates/instantiate', data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       // Invalidate prompts queries since a new prompt was created
       queryClient.invalidateQueries({ queryKey: ['/api/prompts'] });
       queryClient.invalidateQueries({ queryKey: ['/api/prompts/recent'] });
       queryClient.invalidateQueries({ queryKey: ['/api/prompts/favorites'] });
       
-      // Also invalidate template usage for analytics
-      queryClient.invalidateQueries({ queryKey: ['/api/templates', 'usage'] });
+      // Invalidate template usage for analytics with correct templateId
+      queryClient.invalidateQueries({ queryKey: ['/api/templates', variables.templateId, 'usage'] });
+      // Also invalidate the general templates list to update use counts
+      queryClient.invalidateQueries({ queryKey: ['/api/templates'] });
       
       toast({
         title: "Prompt created from template",
@@ -173,8 +179,9 @@ export function useInstantiateTemplate() {
 
 // Get template usage history
 export function useTemplateUsage(templateId: string | null) {
+  const { isAuthenticated } = useAuth();
   return useQuery({
     queryKey: ['/api/templates', templateId, 'usage'],
-    enabled: !!templateId,
+    enabled: !!templateId && isAuthenticated,
   });
 }
