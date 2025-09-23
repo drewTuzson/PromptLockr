@@ -66,6 +66,47 @@ export const rateLimits = pgTable("rate_limits", {
   lastReset: timestamp("last_reset").defaultNow(),
 });
 
+// Define enum for template variable types
+export const variableTypeEnum = pgEnum('variable_type', ['text', 'dropdown', 'number', 'date', 'boolean']);
+
+export const templates = pgTable("templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text("title").notNull(),
+  description: text("description"),
+  content: text("content").notNull(),
+  category: text("category"),
+  tags: text("tags").$type<string[]>().array().default(sql`'{}'`),
+  isPublic: boolean("is_public").default(false),
+  useCount: integer("use_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const templateVariables = pgTable("template_variables", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => templates.id, { onDelete: 'cascade' }),
+  variableName: text("variable_name").notNull(),
+  variableType: variableTypeEnum('variable_type').default('text'),
+  required: boolean("required").default(true),
+  defaultValue: text("default_value"),
+  options: text("options").$type<string[]>().array(), // JSON array for dropdown options
+  description: text("description"),
+  minValue: integer("min_value"), // For number type
+  maxValue: integer("max_value"), // For number type
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const templateUsage = pgTable("template_usage", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => templates.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  promptId: varchar("prompt_id").references(() => prompts.id, { onDelete: 'set null' }),
+  variableValues: text("variable_values").notNull(), // JSON object of variable values
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   passwordHash: true,
@@ -102,6 +143,36 @@ export const insertRateLimitSchema = createInsertSchema(rateLimits).pick({
   enhancementCount: true,
 });
 
+export const insertTemplateSchema = createInsertSchema(templates).pick({
+  userId: true,
+  title: true,
+  description: true,
+  content: true,
+  category: true,
+  tags: true,
+  isPublic: true,
+});
+
+export const insertTemplateVariableSchema = createInsertSchema(templateVariables).pick({
+  templateId: true,
+  variableName: true,
+  variableType: true,
+  required: true,
+  defaultValue: true,
+  options: true,
+  description: true,
+  minValue: true,
+  maxValue: true,
+  sortOrder: true,
+});
+
+export const insertTemplateUsageSchema = createInsertSchema(templateUsage).pick({
+  templateId: true,
+  userId: true,
+  promptId: true,
+  variableValues: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertFolder = z.infer<typeof insertFolderSchema>;
@@ -112,6 +183,12 @@ export type InsertEnhancementSession = z.infer<typeof insertEnhancementSessionSc
 export type EnhancementSession = typeof enhancementSessions.$inferSelect;
 export type InsertRateLimit = z.infer<typeof insertRateLimitSchema>;
 export type RateLimit = typeof rateLimits.$inferSelect;
+export type InsertTemplate = z.infer<typeof insertTemplateSchema>;
+export type Template = typeof templates.$inferSelect;
+export type InsertTemplateVariable = z.infer<typeof insertTemplateVariableSchema>;
+export type TemplateVariable = typeof templateVariables.$inferSelect;
+export type InsertTemplateUsage = z.infer<typeof insertTemplateUsageSchema>;
+export type TemplateUsage = typeof templateUsage.$inferSelect;
 
 // Frontend-specific schema (without userId - added by backend auth)
 export const createPromptSchema = insertPromptSchema.omit({ userId: true });
@@ -119,6 +196,12 @@ export type CreatePrompt = z.infer<typeof createPromptSchema>;
 
 export const createFolderSchema = insertFolderSchema.omit({ userId: true });
 export type CreateFolder = z.infer<typeof createFolderSchema>;
+
+export const createTemplateSchema = insertTemplateSchema.omit({ userId: true });
+export type CreateTemplate = z.infer<typeof createTemplateSchema>;
+
+export const createTemplateVariableSchema = insertTemplateVariableSchema.omit({ templateId: true });
+export type CreateTemplateVariable = z.infer<typeof createTemplateVariableSchema>;
 
 // Auth schemas
 export const loginSchema = z.object({
@@ -151,12 +234,24 @@ export const enhanceNewPromptSchema = z.object({
 export type EnhancePrompt = z.infer<typeof enhancePromptSchema>;
 export type EnhanceNewPrompt = z.infer<typeof enhanceNewPromptSchema>;
 
+// Template processing schemas
+export const instantiateTemplateSchema = z.object({
+  templateId: z.string(),
+  variableValues: z.record(z.any()),
+  targetFolder: z.string().optional(),
+  title: z.string().optional(),
+});
+
+export type InstantiateTemplate = z.infer<typeof instantiateTemplateSchema>;
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   folders: many(folders),
   prompts: many(prompts),
   enhancementSessions: many(enhancementSessions),
   rateLimit: one(rateLimits),
+  templates: many(templates),
+  templateUsage: many(templateUsage),
 }));
 
 export const foldersRelations = relations(folders, ({ one, many }) => ({
@@ -204,5 +299,36 @@ export const rateLimitsRelations = relations(rateLimits, ({ one }) => ({
   user: one(users, {
     fields: [rateLimits.userId],
     references: [users.id],
+  }),
+}));
+
+export const templatesRelations = relations(templates, ({ one, many }) => ({
+  user: one(users, {
+    fields: [templates.userId],
+    references: [users.id],
+  }),
+  variables: many(templateVariables),
+  usage: many(templateUsage),
+}));
+
+export const templateVariablesRelations = relations(templateVariables, ({ one }) => ({
+  template: one(templates, {
+    fields: [templateVariables.templateId],
+    references: [templates.id],
+  }),
+}));
+
+export const templateUsageRelations = relations(templateUsage, ({ one }) => ({
+  template: one(templates, {
+    fields: [templateUsage.templateId],
+    references: [templates.id],
+  }),
+  user: one(users, {
+    fields: [templateUsage.userId],
+    references: [users.id],
+  }),
+  prompt: one(prompts, {
+    fields: [templateUsage.promptId],
+    references: [prompts.id],
   }),
 }));

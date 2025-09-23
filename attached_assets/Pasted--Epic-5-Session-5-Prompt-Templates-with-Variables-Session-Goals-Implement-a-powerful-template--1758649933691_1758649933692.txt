@@ -1,0 +1,1221 @@
+# Epic 5 Session 5: Prompt Templates with Variables
+
+## Session Goals
+Implement a powerful template system with variable placeholders, allowing users to create reusable prompt structures with dynamic content insertion.
+
+## Step 1: Database Schema for Templates
+
+Run these migrations to create template tables:
+
+```sql
+-- Create templates table
+CREATE TABLE templates (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  content TEXT NOT NULL,
+  category TEXT,
+  tags TEXT DEFAULT '[]',
+  is_public BOOLEAN DEFAULT FALSE,
+  use_count INTEGER DEFAULT 0,
+  created_at INTEGER DEFAULT (strftime('%s', 'now')),
+  updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+);
+
+-- Create template variables table
+CREATE TABLE template_variables (
+  id TEXT PRIMARY KEY,
+  template_id TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  variable_name TEXT NOT NULL,
+  variable_type TEXT CHECK (variable_type IN ('text', 'dropdown', 'number', 'date', 'boolean')) DEFAULT 'text',
+  required BOOLEAN DEFAULT TRUE,
+  default_value TEXT,
+  options TEXT, -- JSON array for dropdown options
+  description TEXT,
+  min_value TEXT, -- For number type
+  max_value TEXT, -- For number type
+  sort_order INTEGER DEFAULT 0,
+  created_at INTEGER DEFAULT (strftime('%s', 'now'))
+);
+
+-- Create template usage history
+CREATE TABLE template_usage (
+  id TEXT PRIMARY KEY,
+  template_id TEXT NOT NULL REFERENCES templates(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  prompt_id TEXT REFERENCES prompts(id),
+  variable_values TEXT NOT NULL, -- JSON object of variable values
+  created_at INTEGER DEFAULT (strftime('%s', 'now'))
+);
+
+-- Create indexes
+CREATE INDEX idx_templates_user_id ON templates(user_id);
+CREATE INDEX idx_templates_category ON templates(category);
+CREATE INDEX idx_templates_is_public ON templates(is_public);
+CREATE INDEX idx_template_variables_template_id ON template_variables(template_id);
+CREATE INDEX idx_template_usage_template_id ON template_usage(template_id);
+CREATE INDEX idx_template_usage_user_id ON template_usage(user_id);
+```
+
+## Step 2: Create Template Types
+
+Create `shared/types/templates.ts`:
+
+```typescript
+export interface Template {
+  id: string;
+  userId: string;
+  title: string;
+  description?: string;
+  content: string;
+  category?: string;
+  tags: string[];
+  isPublic: boolean;
+  useCount: number;
+  variables: TemplateVariable[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TemplateVariable {
+  id: string;
+  templateId: string;
+  variableName: string;
+  variableType: 'text' | 'dropdown' | 'number' | 'date' | 'boolean';
+  required: boolean;
+  defaultValue?: string;
+  options?: string[]; // For dropdown type
+  description?: string;
+  minValue?: number; // For number type
+  maxValue?: number; // For number type
+  sortOrder: number;
+}
+
+export interface TemplateUsageEntry {
+  templateId: string;
+  variableValues: Record<string, any>;
+  promptId?: string;
+  createdAt: Date;
+}
+
+export interface TemplateInstantiationRequest {
+  templateId: string;
+  variableValues: Record<string, any>;
+  targetFolder?: string;
+  title?: string;
+}
+
+export interface TemplateValidationResult {
+  valid: boolean;
+  errors?: string[];
+  missingRequired?: string[];
+  invalidTypes?: Record<string, string>;
+}
+```
+
+## Step 3: Create Template Processing Engine
+
+Create `server/services/templateEngine.ts`:
+
+```typescript
+import { db } from '../../lib/db/index.js';
+import { templates, template_variables, template_usage, prompts } from '../../lib/db/schema.js';
+import { eq, and } from 'drizzle-orm';
+import { Template, TemplateVariable, TemplateValidationResult } from '../../shared/types/templates.js';
+
+export class TemplateEngine {
+  /**
+   * Parse template content to extract variables
+   * Variables use {{variableName}} syntax
+   */
+  parseVariables(content: string): string[] {
+    const regex = /\{\{(\w+)\}\}/g;
+    const variables = new Set<string>();
+    let match;
+    
+    while ((match = regex.exec(content)) !== null) {
+      variables.add(match[1]);
+    }
+    
+    return Array.from(variables);
+  }
+
+  /**
+   * Validate template content
+   */
+  validateTemplate(content: string): { valid: boolean; errors?: string[] } {
+    const errors: string[] = [];
+    
+    // Check for unclosed brackets
+    const openCount = (content.match(/\{\{/g) || []).length;
+    const closeCount = (content.match(/\}\}/g) || []).length;
+    
+    if (openCount !== closeCount) {
+      errors.push('Template has mismatched variable brackets');
+    }
+    
+    // Check for invalid variable names
+    const regex = /\{\{([^}]+)\}\}/g;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      const varName = match[1].trim();
+      if (!/^\w+$/.test(varName)) {
+        errors.push(`Invalid variable name: ${varName}. Use only letters, numbers, and underscores.`);
+      }
+    }
+    
+    // Check for empty template
+    const withoutVars = content.replace(/\{\{[^}]+\}\}/g, '').trim();
+    if (!withoutVars) {
+      errors.push('Template cannot be empty after variable removal');
+    }
+    
+    return {
+      valid: errors.length === 0,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Instantiate template with provided values
+   */
+  instantiateTemplate(
+    content: string,
+    variables: TemplateVariable[],
+    values: Record<string, any>
+  ): { result: string; validation: TemplateValidationResult } {
+    const validation = this.validateVariableValues(variables, values);
+    
+    if (!validation.valid) {
+      return { result: content, validation };
+    }
+    
+    let result = content;
+    
+    // Replace each variable with its value
+    for (const variable of variables) {
+      const value = values[variable.variableName] ?? variable.defaultValue ?? '';
+      const formattedValue = this.formatValue(value, variable.variableType);
+      const regex = new RegExp(`\\{\\{${variable.variableName}\\}\\}`, 'g');
+      result = result.replace(regex, formattedValue);
+    }
+    
+    return { result, validation };
+  }
+
+  /**
+   * Validate variable values against template requirements
+   */
+  validateVariableValues(
+    variables: TemplateVariable[],
+    values: Record<string, any>
+  ): TemplateValidationResult {
+    const errors: string[] = [];
+    const missingRequired: string[] = [];
+    const invalidTypes: Record<string, string> = {};
+    
+    for (const variable of variables) {
+      const value = values[variable.variableName];
+      
+      // Check required
+      if (variable.required && (value === undefined || value === null || value === '')) {
+        if (!variable.defaultValue) {
+          missingRequired.push(variable.variableName);
+        }
+      }
+      
+      // Type validation if value exists
+      if (value !== undefined && value !== null && value !== '') {
+        switch (variable.variableType) {
+          case 'number':
+            if (typeof value !== 'number' && isNaN(Number(value))) {
+              invalidTypes[variable.variableName] = 'Must be a number';
+            } else {
+              const num = Number(value);
+              if (variable.minValue !== undefined && num < variable.minValue) {
+                invalidTypes[variable.variableName] = `Must be at least ${variable.minValue}`;
+              }
+              if (variable.maxValue !== undefined && num > variable.maxValue) {
+                invalidTypes[variable.variableName] = `Must be at most ${variable.maxValue}`;
+              }
+            }
+            break;
+            
+          case 'dropdown':
+            if (variable.options && !variable.options.includes(String(value))) {
+              invalidTypes[variable.variableName] = 'Invalid option selected';
+            }
+            break;
+            
+          case 'date':
+            const date = new Date(value);
+            if (isNaN(date.getTime())) {
+              invalidTypes[variable.variableName] = 'Invalid date format';
+            }
+            break;
+            
+          case 'boolean':
+            if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
+              invalidTypes[variable.variableName] = 'Must be true or false';
+            }
+            break;
+        }
+      }
+    }
+    
+    return {
+      valid: missingRequired.length === 0 && Object.keys(invalidTypes).length === 0,
+      errors,
+      missingRequired: missingRequired.length > 0 ? missingRequired : undefined,
+      invalidTypes: Object.keys(invalidTypes).length > 0 ? invalidTypes : undefined
+    };
+  }
+
+  /**
+   * Format value based on variable type
+   */
+  private formatValue(value: any, type: string): string {
+    if (value === null || value === undefined) return '';
+    
+    switch (type) {
+      case 'date':
+        if (value instanceof Date) {
+          return value.toLocaleDateString();
+        }
+        return new Date(value).toLocaleDateString();
+        
+      case 'boolean':
+        return value ? 'yes' : 'no';
+        
+      case 'number':
+        return String(value);
+        
+      default:
+        return String(value);
+    }
+  }
+
+  /**
+   * Convert a prompt to a template
+   */
+  async convertPromptToTemplate(
+    promptContent: string,
+    userId: string
+  ): Promise<{ templateContent: string; detectedVariables: string[] }> {
+    // Detect potential variables (capitalized words, placeholders, etc.)
+    const potentialVars = new Set<string>();
+    
+    // Find [PLACEHOLDER] style
+    const bracketRegex = /\[([A-Z_]+)\]/g;
+    let match;
+    while ((match = bracketRegex.exec(promptContent)) !== null) {
+      potentialVars.add(match[1]);
+    }
+    
+    // Find <placeholder> style
+    const angleRegex = /<([A-Z_]+)>/g;
+    while ((match = angleRegex.exec(promptContent)) !== null) {
+      potentialVars.add(match[1]);
+    }
+    
+    // Find CAPS_WORDS that look like placeholders
+    const capsRegex = /\b([A-Z][A-Z_]+)\b/g;
+    while ((match = capsRegex.exec(promptContent)) !== null) {
+      if (match[1].length > 2) { // Avoid short acronyms
+        potentialVars.add(match[1]);
+      }
+    }
+    
+    // Convert detected patterns to template variables
+    let templateContent = promptContent;
+    const detectedVariables: string[] = [];
+    
+    for (const varName of potentialVars) {
+      const normalizedName = varName.toLowerCase().replace(/_/g, '_');
+      detectedVariables.push(normalizedName);
+      
+      // Replace all variations with template syntax
+      templateContent = templateContent.replace(
+        new RegExp(`\\[${varName}\\]|<${varName}>|\\b${varName}\\b`, 'g'),
+        `{{${normalizedName}}}`
+      );
+    }
+    
+    return { templateContent, detectedVariables };
+  }
+}
+
+export const templateEngine = new TemplateEngine();
+```
+
+## Step 4: Create Template API Endpoints
+
+Add to your `server/routes.ts`:
+
+```typescript
+import { templateEngine } from './services/templateEngine.js';
+import { v4 as uuidv4 } from 'uuid';
+
+// GET /api/templates - List user templates
+app.get('/api/templates', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { category, search } = req.query;
+    
+    let query = db
+      .select()
+      .from(templates)
+      .where(eq(templates.userId, userId));
+    
+    if (category) {
+      query = query.where(eq(templates.category, category));
+    }
+    
+    const userTemplates = await query;
+    
+    // Get variables for each template
+    const templatesWithVars = await Promise.all(
+      userTemplates.map(async (template) => {
+        const vars = await db
+          .select()
+          .from(template_variables)
+          .where(eq(template_variables.templateId, template.id))
+          .orderBy(asc(template_variables.sortOrder));
+        
+        return {
+          ...template,
+          variables: vars,
+          tags: JSON.parse(template.tags || '[]')
+        };
+      })
+    );
+    
+    res.json({ templates: templatesWithVars });
+  } catch (error) {
+    console.error('Error fetching templates:', error);
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
+
+// POST /api/templates - Create template
+app.post('/api/templates', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { title, description, content, category, tags, variables } = req.body;
+    
+    // Validate template
+    const validation = templateEngine.validateTemplate(content);
+    if (!validation.valid) {
+      return res.status(400).json({ error: 'Invalid template', details: validation.errors });
+    }
+    
+    // Parse variables from content
+    const detectedVars = templateEngine.parseVariables(content);
+    
+    // Create template
+    const templateId = uuidv4();
+    
+    await db.insert(templates).values({
+      id: templateId,
+      userId,
+      title,
+      description,
+      content,
+      category,
+      tags: JSON.stringify(tags || []),
+      isPublic: false,
+      useCount: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    
+    // Create variables
+    if (variables && variables.length > 0) {
+      const variableInserts = variables.map((v, index) => ({
+        id: uuidv4(),
+        templateId,
+        variableName: v.variableName,
+        variableType: v.variableType || 'text',
+        required: v.required !== false,
+        defaultValue: v.defaultValue,
+        options: v.options ? JSON.stringify(v.options) : null,
+        description: v.description,
+        minValue: v.minValue,
+        maxValue: v.maxValue,
+        sortOrder: index,
+        createdAt: new Date()
+      }));
+      
+      await db.insert(template_variables).values(variableInserts);
+    }
+    
+    res.json({ 
+      success: true, 
+      templateId,
+      detectedVariables: detectedVars
+    });
+    
+  } catch (error) {
+    console.error('Error creating template:', error);
+    res.status(500).json({ error: 'Failed to create template' });
+  }
+});
+
+// POST /api/templates/:id/instantiate - Create prompt from template
+app.post('/api/templates/:id/instantiate', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const templateId = req.params.id;
+    const { variableValues, title, folderId, platform, tags } = req.body;
+    
+    // Get template
+    const [template] = await db
+      .select()
+      .from(templates)
+      .where(and(
+        eq(templates.id, templateId),
+        eq(templates.userId, userId)
+      ));
+    
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    
+    // Get variables
+    const variables = await db
+      .select()
+      .from(template_variables)
+      .where(eq(template_variables.templateId, templateId));
+    
+    // Instantiate template
+    const { result, validation } = templateEngine.instantiateTemplate(
+      template.content,
+      variables,
+      variableValues
+    );
+    
+    if (!validation.valid) {
+      return res.status(400).json({ 
+        error: 'Invalid variable values', 
+        validation 
+      });
+    }
+    
+    // Create new prompt from instantiated template
+    const promptId = uuidv4();
+    
+    await db.insert(prompts).values({
+      id: promptId,
+      userId,
+      title: title || `${template.title} - ${new Date().toLocaleDateString()}`,
+      content: result,
+      platform,
+      folderId,
+      tags: JSON.stringify(tags || JSON.parse(template.tags || '[]')),
+      isFavorite: false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    
+    // Record template usage
+    await db.insert(template_usage).values({
+      id: uuidv4(),
+      templateId,
+      userId,
+      promptId,
+      variableValues: JSON.stringify(variableValues),
+      createdAt: new Date()
+    });
+    
+    // Increment use count
+    await db.update(templates)
+      .set({ 
+        useCount: sql`use_count + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(templates.id, templateId));
+    
+    res.json({ 
+      success: true, 
+      promptId,
+      content: result
+    });
+    
+  } catch (error) {
+    console.error('Error instantiating template:', error);
+    res.status(500).json({ error: 'Failed to instantiate template' });
+  }
+});
+
+// POST /api/prompts/:id/convert-to-template
+app.post('/api/prompts/:id/convert-to-template', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const promptId = req.params.id;
+    const { title, description, autoDetect } = req.body;
+    
+    // Get prompt
+    const [prompt] = await db
+      .select()
+      .from(prompts)
+      .where(and(
+        eq(prompts.id, promptId),
+        eq(prompts.userId, userId)
+      ));
+    
+    if (!prompt) {
+      return res.status(404).json({ error: 'Prompt not found' });
+    }
+    
+    let templateContent = prompt.content;
+    let detectedVariables = [];
+    
+    // Auto-detect and convert variables if requested
+    if (autoDetect) {
+      const result = await templateEngine.convertPromptToTemplate(prompt.content, userId);
+      templateContent = result.templateContent;
+      detectedVariables = result.detectedVariables;
+    }
+    
+    // Create template
+    const templateId = uuidv4();
+    
+    await db.insert(templates).values({
+      id: templateId,
+      userId,
+      title: title || `${prompt.title} Template`,
+      description: description || `Template created from: ${prompt.title}`,
+      content: templateContent,
+      category: 'converted',
+      tags: prompt.tags,
+      isPublic: false,
+      useCount: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    
+    // Create auto-detected variables
+    if (detectedVariables.length > 0) {
+      const variableInserts = detectedVariables.map((varName, index) => ({
+        id: uuidv4(),
+        templateId,
+        variableName: varName,
+        variableType: 'text',
+        required: true,
+        sortOrder: index,
+        createdAt: new Date()
+      }));
+      
+      await db.insert(template_variables).values(variableInserts);
+    }
+    
+    res.json({ 
+      success: true, 
+      templateId,
+      detectedVariables
+    });
+    
+  } catch (error) {
+    console.error('Error converting to template:', error);
+    res.status(500).json({ error: 'Failed to convert to template' });
+  }
+});
+```
+
+## Step 5: Create Template Editor Component
+
+Create `client/src/components/templates/TemplateEditor.tsx`:
+
+```typescript
+import * as React from 'react';
+import { PlusIcon, TrashIcon, GripVerticalIcon } from 'lucide-react';
+import * as Select from '@radix-ui/react-select';
+import * as Switch from '@radix-ui/react-switch';
+
+interface TemplateEditorProps {
+  initialContent?: string;
+  initialVariables?: any[];
+  onSave: (template: any) => void;
+  onCancel: () => void;
+}
+
+export function TemplateEditor({ 
+  initialContent = '', 
+  initialVariables = [],
+  onSave, 
+  onCancel 
+}: TemplateEditorProps) {
+  const [title, setTitle] = React.useState('');
+  const [description, setDescription] = React.useState('');
+  const [content, setContent] = React.useState(initialContent);
+  const [category, setCategory] = React.useState('general');
+  const [variables, setVariables] = React.useState(initialVariables);
+  const [highlightVariables, setHighlightVariables] = React.useState(true);
+
+  // Parse variables from content
+  const parseVariables = () => {
+    const regex = /\{\{(\w+)\}\}/g;
+    const found = new Set<string>();
+    let match;
+    
+    while ((match = regex.exec(content)) !== null) {
+      found.add(match[1]);
+    }
+    
+    // Add new variables that aren't already defined
+    const newVars = Array.from(found).filter(
+      v => !variables.find(existing => existing.variableName === v)
+    );
+    
+    if (newVars.length > 0) {
+      setVariables([
+        ...variables,
+        ...newVars.map(v => ({
+          variableName: v,
+          variableType: 'text',
+          required: true,
+          description: '',
+          defaultValue: ''
+        }))
+      ]);
+    }
+  };
+
+  // Add variable to content
+  const insertVariable = (varName: string) => {
+    const textarea = document.getElementById('template-content') as HTMLTextAreaElement;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newContent = 
+        content.substring(0, start) + 
+        `{{${varName}}}` + 
+        content.substring(end);
+      setContent(newContent);
+      
+      // Reset cursor position
+      setTimeout(() => {
+        textarea.selectionStart = start + varName.length + 4;
+        textarea.selectionEnd = start + varName.length + 4;
+        textarea.focus();
+      }, 0);
+    }
+  };
+
+  // Update variable
+  const updateVariable = (index: number, updates: any) => {
+    const newVars = [...variables];
+    newVars[index] = { ...newVars[index], ...updates };
+    setVariables(newVars);
+  };
+
+  // Remove variable
+  const removeVariable = (index: number) => {
+    setVariables(variables.filter((_, i) => i !== index));
+  };
+
+  // Handle save
+  const handleSave = () => {
+    onSave({
+      title,
+      description,
+      content,
+      category,
+      variables
+    });
+  };
+
+  // Highlight variables in preview
+  const getHighlightedContent = () => {
+    if (!highlightVariables) return content;
+    
+    return content.replace(
+      /\{\{(\w+)\}\}/g,
+      '<span class="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-1 rounded">{{$1}}</span>'
+    );
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto p-6">
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg">
+        {/* Header */}
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-2xl font-bold">Create Template</h2>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            Create reusable templates with dynamic variables
+          </p>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Basic Info */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Template Title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800"
+                placeholder="e.g., Blog Post Outline"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800"
+              >
+                <option value="general">General</option>
+                <option value="writing">Writing</option>
+                <option value="coding">Coding</option>
+                <option value="marketing">Marketing</option>
+                <option value="analysis">Analysis</option>
+                <option value="creative">Creative</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800"
+              rows={2}
+              placeholder="Describe what this template is for..."
+            />
+          </div>
+
+          {/* Template Content */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium">Template Content</label>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch.Root
+                    checked={highlightVariables}
+                    onCheckedChange={setHighlightVariables}
+                    className="w-10 h-6 bg-gray-200 dark:bg-gray-700 rounded-full relative 
+                             data-[state=checked]:bg-blue-600"
+                  >
+                    <Switch.Thumb className="block w-4 h-4 bg-white rounded-full transition-transform 
+                                           translate-x-1 data-[state=checked]:translate-x-5" />
+                  </Switch.Root>
+                  Highlight Variables
+                </label>
+                <button
+                  onClick={parseVariables}
+                  className="px-3 py-1 text-sm bg-blue-100 text-blue-700 dark:bg-blue-900 
+                           dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-800"
+                >
+                  Detect Variables
+                </button>
+              </div>
+            </div>
+            
+            <textarea
+              id="template-content"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800 font-mono"
+              rows={12}
+              placeholder="Write your template here. Use {{variableName}} for dynamic content..."
+            />
+            
+            <div className="mt-2 text-xs text-gray-500">
+              Tip: Use {'{{variableName}}'} syntax to create variables
+            </div>
+          </div>
+
+          {/* Variables Section */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Template Variables</h3>
+              <button
+                onClick={() => setVariables([...variables, {
+                  variableName: `variable${variables.length + 1}`,
+                  variableType: 'text',
+                  required: true
+                }])}
+                className="px-3 py-1 text-sm bg-green-600 text-white rounded-lg 
+                         hover:bg-green-700 flex items-center gap-1"
+              >
+                <PlusIcon className="w-4 h-4" />
+                Add Variable
+              </button>
+            </div>
+
+            {variables.length === 0 ? (
+              <div className="p-8 text-center bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <p className="text-gray-600 dark:text-gray-400">
+                  No variables defined yet. Add variables or use {'{{variableName}}'} syntax in your template.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {variables.map((variable, index) => (
+                  <div key={index} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <GripVerticalIcon className="w-5 h-5 text-gray-400 mt-2 cursor-move" />
+                      
+                      <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-xs font-medium mb-1 block">Variable Name</label>
+                          <input
+                            type="text"
+                            value={variable.variableName}
+                            onChange={(e) => updateVariable(index, { variableName: e.target.value })}
+                            className="w-full px-2 py-1 text-sm border rounded dark:bg-gray-700"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="text-xs font-medium mb-1 block">Type</label>
+                          <select
+                            value={variable.variableType}
+                            onChange={(e) => updateVariable(index, { variableType: e.target.value })}
+                            className="w-full px-2 py-1 text-sm border rounded dark:bg-gray-700"
+                          >
+                            <option value="text">Text</option>
+                            <option value="number">Number</option>
+                            <option value="dropdown">Dropdown</option>
+                            <option value="date">Date</option>
+                            <option value="boolean">Yes/No</option>
+                          </select>
+                        </div>
+                        
+                        <div>
+                          <label className="text-xs font-medium mb-1 block">Default Value</label>
+                          <input
+                            type="text"
+                            value={variable.defaultValue || ''}
+                            onChange={(e) => updateVariable(index, { defaultValue: e.target.value })}
+                            className="w-full px-2 py-1 text-sm border rounded dark:bg-gray-700"
+                            placeholder="Optional"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => insertVariable(variable.variableName)}
+                          className="p-1 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900 rounded"
+                          title="Insert into template"
+                        >
+                          <PlusIcon className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => removeVariable(index)}
+                          className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900 rounded"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {variable.variableType === 'dropdown' && (
+                      <div className="mt-3">
+                        <label className="text-xs font-medium mb-1 block">Options (comma-separated)</label>
+                        <input
+                          type="text"
+                          value={variable.options?.join(', ') || ''}
+                          onChange={(e) => updateVariable(index, { 
+                            options: e.target.value.split(',').map(o => o.trim()).filter(o => o)
+                          })}
+                          className="w-full px-2 py-1 text-sm border rounded dark:bg-gray-700"
+                          placeholder="Option 1, Option 2, Option 3"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Preview */}
+          {content && (
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Preview</h3>
+              <div 
+                className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg whitespace-pre-wrap"
+                dangerouslySetInnerHTML={{ __html: getHighlightedContent() }}
+              />
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 
+                       dark:hover:bg-gray-800 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!title || !content}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 
+                       disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save Template
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+## Step 6: Create Template Instantiation Wizard
+
+Create `client/src/components/templates/TemplateWizard.tsx`:
+
+```typescript
+import * as React from 'react';
+import { SparklesIcon, CheckIcon } from 'lucide-react';
+import { useTemplateInstantiation } from '../../hooks/useTemplates';
+
+interface TemplateWizardProps {
+  template: any;
+  onComplete: (promptId: string) => void;
+  onCancel: () => void;
+}
+
+export function TemplateWizard({ template, onComplete, onCancel }: TemplateWizardProps) {
+  const { instantiate, isLoading } = useTemplateInstantiation();
+  const [values, setValues] = React.useState<Record<string, any>>({});
+  const [title, setTitle] = React.useState('');
+  const [preview, setPreview] = React.useState('');
+
+  // Initialize with default values
+  React.useEffect(() => {
+    const defaults: Record<string, any> = {};
+    template.variables.forEach((v: any) => {
+      if (v.defaultValue) {
+        defaults[v.variableName] = v.defaultValue;
+      }
+    });
+    setValues(defaults);
+  }, [template]);
+
+  // Update preview when values change
+  React.useEffect(() => {
+    let result = template.content;
+    Object.entries(values).forEach(([key, value]) => {
+      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+      result = result.replace(regex, value || `[${key}]`);
+    });
+    setPreview(result);
+  }, [values, template]);
+
+  const handleSubmit = async () => {
+    const result = await instantiate({
+      templateId: template.id,
+      variableValues: values,
+      title: title || `${template.title} - ${new Date().toLocaleDateString()}`
+    });
+    
+    if (result.success) {
+      onComplete(result.promptId);
+    }
+  };
+
+  const renderVariableInput = (variable: any) => {
+    const value = values[variable.variableName] || '';
+    
+    switch (variable.variableType) {
+      case 'dropdown':
+        return (
+          <select
+            value={value}
+            onChange={(e) => setValues({ ...values, [variable.variableName]: e.target.value })}
+            className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800"
+            required={variable.required}
+          >
+            <option value="">Select...</option>
+            {variable.options?.map((opt: string) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        );
+        
+      case 'number':
+        return (
+          <input
+            type="number"
+            value={value}
+            onChange={(e) => setValues({ ...values, [variable.variableName]: e.target.value })}
+            min={variable.minValue}
+            max={variable.maxValue}
+            className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800"
+            required={variable.required}
+          />
+        );
+        
+      case 'date':
+        return (
+          <input
+            type="date"
+            value={value}
+            onChange={(e) => setValues({ ...values, [variable.variableName]: e.target.value })}
+            className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800"
+            required={variable.required}
+          />
+        );
+        
+      case 'boolean':
+        return (
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name={variable.variableName}
+                value="true"
+                checked={value === 'true' || value === true}
+                onChange={() => setValues({ ...values, [variable.variableName]: true })}
+              />
+              Yes
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name={variable.variableName}
+                value="false"
+                checked={value === 'false' || value === false}
+                onChange={() => setValues({ ...values, [variable.variableName]: false })}
+              />
+              No
+            </label>
+          </div>
+        );
+        
+      default:
+        return (
+          <textarea
+            value={value}
+            onChange={(e) => setValues({ ...values, [variable.variableName]: e.target.value })}
+            className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800"
+            rows={3}
+            required={variable.required}
+          />
+        );
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <SparklesIcon className="w-6 h-6 text-purple-600" />
+            Use Template: {template.title}
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">{template.description}</p>
+        </div>
+        
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Variable Inputs */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-lg">Fill in Variables</h3>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2">Prompt Title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800"
+                  placeholder={`${template.title} - ${new Date().toLocaleDateString()}`}
+                />
+              </div>
+              
+              {template.variables.map((variable: any) => (
+                <div key={variable.variableName}>
+                  <label className="block text-sm font-medium mb-2">
+                    {variable.variableName}
+                    {variable.required && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  {variable.description && (
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+                      {variable.description}
+                    </p>
+                  )}
+                  {renderVariableInput(variable)}
+                </div>
+              ))}
+            </div>
+            
+            {/* Preview */}
+            <div>
+              <h3 className="font-semibold text-lg mb-4">Preview</h3>
+              <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg whitespace-pre-wrap 
+                            max-h-[500px] overflow-y-auto">
+                {preview}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 
+                     dark:hover:bg-gray-800 rounded-lg"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={isLoading}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 
+                     disabled:opacity-50 flex items-center gap-2"
+          >
+            {isLoading ? (
+              <>Loading...</>
+            ) : (
+              <>
+                <CheckIcon className="w-4 h-4" />
+                Create Prompt
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+## Testing Checklist
+
+- [ ] Template creation with variable detection
+- [ ] Variable type validation (text, number, dropdown, date, boolean)
+- [ ] Template instantiation with all variable types
+- [ ] Convert existing prompt to template
+- [ ] Auto-detect variables in converted prompts
+- [ ] Template library browsing and search
+- [ ] Template usage tracking
+- [ ] Variable default values work correctly
+- [ ] Required vs optional variables enforced
+- [ ] Preview updates in real-time
+- [ ] Template categories and tags
+- [ ] Error handling for invalid templates
+- [ ] Sorting and reordering variables
+
+## Session 5 Complete!
+
+Your Template system is now ready with:
+- Powerful variable system with multiple data types
+- Visual template editor with variable highlighting
+- Instantiation wizard for easy prompt creation
+- Auto-detection when converting prompts to templates
+- Usage tracking and analytics
+
+Next session will implement the Public Prompt Library for community sharing!
