@@ -15,29 +15,35 @@ export function buildFilterConditions(filters: PromptFilters, userId: string) {
 
   // Date filters
   if (filters.dateCreated?.start) {
-    conditions.push(gte(prompts.createdAt, filters.dateCreated.start));
+    const startDate = typeof filters.dateCreated.start === 'string' ? new Date(filters.dateCreated.start) : filters.dateCreated.start;
+    conditions.push(gte(prompts.createdAt, startDate));
   }
   if (filters.dateCreated?.end) {
-    conditions.push(lte(prompts.createdAt, filters.dateCreated.end));
+    const endDate = typeof filters.dateCreated.end === 'string' ? new Date(filters.dateCreated.end) : filters.dateCreated.end;
+    conditions.push(lte(prompts.createdAt, endDate));
   }
 
   if (filters.dateModified?.start) {
-    conditions.push(gte(prompts.updatedAt, filters.dateModified.start));
+    const startDate = typeof filters.dateModified.start === 'string' ? new Date(filters.dateModified.start) : filters.dateModified.start;
+    conditions.push(gte(prompts.updatedAt, startDate));
   }
   if (filters.dateModified?.end) {
-    conditions.push(lte(prompts.updatedAt, filters.dateModified.end));
+    const endDate = typeof filters.dateModified.end === 'string' ? new Date(filters.dateModified.end) : filters.dateModified.end;
+    conditions.push(lte(prompts.updatedAt, endDate));
   }
 
   if (filters.lastUsed?.start) {
-    conditions.push(gte(prompts.lastAccessed, filters.lastUsed.start));
+    const startDate = typeof filters.lastUsed.start === 'string' ? new Date(filters.lastUsed.start) : filters.lastUsed.start;
+    conditions.push(gte(prompts.lastAccessed, startDate));
   }
   if (filters.lastUsed?.end) {
-    conditions.push(lte(prompts.lastAccessed, filters.lastUsed.end));
+    const endDate = typeof filters.lastUsed.end === 'string' ? new Date(filters.lastUsed.end) : filters.lastUsed.end;
+    conditions.push(lte(prompts.lastAccessed, endDate));
   }
 
   // Platform filter
   if (filters.platforms && filters.platforms.length > 0) {
-    conditions.push(inArray(prompts.platform, filters.platforms));
+    conditions.push(inArray(prompts.platform, filters.platforms as any));
   }
 
   // Folder filter

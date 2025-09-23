@@ -6,8 +6,13 @@ import { z } from "zod";
 import { ReplitDBAdapter } from "../lib/db/replit-db";
 import { AuthService } from "../lib/auth/jwt-auth";
 import Database from "@replit/database";
+import { db as drizzleDB } from "./db.js";
+import { prompts } from "@shared/schema";
+import { validateAndSanitizeFilters } from "./utils/filterValidation.js";
+import { buildFilterConditions, buildOrderBy } from "./utils/filterQueryBuilder.js";
+import { sql } from "drizzle-orm";
 
-const db = new ReplitDBAdapter();
+const replitDB = new ReplitDBAdapter();
 const healthDB = new Database();
 
 function requireAuth(req: any): { userId: string; email: string } {
@@ -58,7 +63,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user exists
-      const existingUser = await db.getUserByEmail(email);
+      const existingUser = await replitDB.getUserByEmail(email);
       if (existingUser) {
         return res.status(409).json({
           error: 'User already exists'
@@ -67,7 +72,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create user
       const passwordHash = await AuthService.hashPassword(password);
-      const user = await db.createUser({
+      const user = await replitDB.createUser({
         email,
         passwordHash,
         createdAt: new Date().toISOString(),
@@ -107,7 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Find user
-      const user = await db.getUserByEmail(email);
+      const user = await replitDB.getUserByEmail(email);
       if (!user) {
         return res.status(401).json({
           error: 'Invalid credentials'
@@ -145,20 +150,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ message: "Logged out successfully" });
   });
 
-  // Prompts routes
+  // Prompts routes - Enhanced with advanced filtering
   app.get("/api/prompts", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      const query = req.query.q as string;
       
-      let prompts;
-      if (query) {
-        prompts = await storage.searchPrompts(userId, query);
-      } else {
-        prompts = await storage.getUserPrompts(userId);
+      // Check if this is a request with advanced filters
+      const hasAdvancedFilters = Object.keys(req.query).some(key => 
+        ['search', 'dateCreatedStart', 'dateCreatedEnd', 'dateModifiedStart', 'dateModifiedEnd', 
+         'lastUsedStart', 'lastUsedEnd', 'platforms', 'tags', 'folders', 'favoritesOnly', 
+         'recentOnly', 'enhanced', 'trashedOnly', 'limit', 'offset', 'sortBy', 'sortOrder'].includes(key)
+      );
+      
+      // Use advanced filtering if filters are detected
+      if (hasAdvancedFilters) {
+        // Validate and sanitize filters
+        const validation = validateAndSanitizeFilters(req.query);
+        
+        if (!validation.valid) {
+          return res.status(400).json({ 
+            error: 'Invalid filter parameters', 
+            details: validation.errors 
+          });
+        }
+
+        const filters = validation.sanitized!;
+        
+        // Build query using PostgreSQL with Drizzle ORM
+        const conditions = buildFilterConditions(filters, userId);
+        const orderBy = buildOrderBy(filters);
+        
+        // Set defaults for pagination
+        const limit = filters.limit || 50;
+        const offset = filters.offset || 0;
+        
+        // Execute query
+        const query = drizzleDB
+          .select()
+          .from(prompts)
+          .where(conditions)
+          .orderBy(orderBy)
+          .limit(limit)
+          .offset(offset);
+
+        const results = await query;
+
+        // Get total count for pagination
+        const countQuery = drizzleDB
+          .select({ count: sql`count(*)` })
+          .from(prompts)
+          .where(conditions);
+        
+        const [{ count }] = await countQuery;
+
+        return res.json({
+          prompts: results,
+          pagination: {
+            total: Number(count),
+            limit,
+            offset,
+            hasMore: offset + limit < Number(count)
+          },
+          filters: filters
+        });
       }
       
-      res.json(prompts);
+      // Backward compatibility: Use existing storage interface for basic queries
+      const query = req.query.q as string;
+      let promptsResult;
+      if (query) {
+        promptsResult = await storage.searchPrompts(userId, query);
+      } else {
+        promptsResult = await storage.getUserPrompts(userId);
+      }
+      
+      res.json(promptsResult);
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
         return res.status(401).json({ message: error.message });
@@ -318,6 +384,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updates = req.body;
       delete updates.userId; // Prevent userId changes
       delete updates.id; // Prevent id changes
+      
+      // Always update the updatedAt timestamp for modifications
+      updates.updatedAt = new Date();
       
       const updated = await storage.updatePrompt(req.params.id, updates);
       res.json(updated);

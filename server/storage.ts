@@ -96,7 +96,7 @@ export class ReplitStorage implements IStorage {
     const user = await this.replitDB.createUser({
       email: insertUser.email,
       passwordHash: insertUser.passwordHash,
-      preferences: insertUser.preferences || { theme: 'light' as 'light' | 'dark' },
+      preferences: insertUser.preferences || { theme: 'light' as const },
       createdAt: new Date().toISOString()
     });
     
@@ -344,6 +344,7 @@ export class ReplitStorage implements IStorage {
       charCount: prompt.charCount.toString(),
       createdAt: new Date(prompt.createdAt),
       lastAccessed: new Date(prompt.lastAccessed),
+      updatedAt: prompt.updatedAt ? new Date(prompt.updatedAt) : new Date(prompt.createdAt),
       trashedAt: prompt.trashedAt ? new Date(prompt.trashedAt) : null
     };
   }
