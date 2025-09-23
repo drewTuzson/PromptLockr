@@ -51,6 +51,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>(editingPrompt?.tags || []);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [customPlatform, setCustomPlatform] = useState<string>('');
   
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
@@ -72,14 +73,20 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
   React.useEffect(() => {
     if (editingPrompt) {
       console.log('Resetting form with editingPrompt:', editingPrompt);
+      
+      // Check if this is a custom platform (not in our predefined list)
+      const predefinedPlatforms = ['ChatGPT', 'Claude', 'Perplexity', 'Gemini', 'Mistral', 'Midjourney', 'DALL-E', 'Stable Diffusion', 'Leonardo AI', 'Llama', 'Cohere'];
+      const isCustomPlatform = !predefinedPlatforms.includes(editingPrompt.platform);
+      
       form.reset({
         title: editingPrompt.title || '',
         content: editingPrompt.content || '',
-        platform: editingPrompt.platform || 'ChatGPT',
+        platform: isCustomPlatform ? 'Custom/Other' : editingPrompt.platform,
         tags: editingPrompt.tags || [],
         isFavorite: editingPrompt.isFavorite || false,
       });
       setTags(editingPrompt.tags || []);
+      setCustomPlatform(isCustomPlatform ? editingPrompt.platform : '');
     } else {
       form.reset({
         title: '',
@@ -89,13 +96,20 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
         isFavorite: false,
       });
       setTags([]);
+      setCustomPlatform('');
     }
   }, [editingPrompt, form]);
 
   const onSubmit = async (data: PromptFormData) => {
     try {
+      // Use custom platform name if Custom/Other is selected and custom name is provided
+      const finalPlatform = data.platform === 'Custom/Other' && customPlatform.trim() 
+        ? customPlatform.trim() 
+        : data.platform;
+      
       const promptData = {
         ...data,
+        platform: finalPlatform,
         tags,
       };
 
@@ -119,6 +133,8 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
     form.reset();
     setTags([]);
     setTagInput('');
+    setCustomPlatform('');
+    setShowSuggestions(false);
     onClose();
   };
 
@@ -214,7 +230,12 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                     <Select
                       data-testid="select-platform"
                       value={field.value}
-                      onValueChange={field.onChange}
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        if (value !== 'Custom/Other') {
+                          setCustomPlatform('');
+                        }
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select a platform" />
@@ -239,6 +260,24 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                 </FormItem>
               )}
             />
+
+            {/* Custom Platform Input - conditionally shown */}
+            {form.watch('platform') === 'Custom/Other' && (
+              <FormItem>
+                <FormLabel>Enter custom platform name</FormLabel>
+                <FormControl>
+                  <Input
+                    data-testid="input-custom-platform"
+                    placeholder="e.g., GPT-4, Bard, Custom AI"
+                    value={customPlatform}
+                    onChange={(e) => setCustomPlatform(e.target.value)}
+                  />
+                </FormControl>
+                {form.watch('platform') === 'Custom/Other' && !customPlatform.trim() && (
+                  <FormMessage>Custom platform name is required</FormMessage>
+                )}
+              </FormItem>
+            )}
 
             <FormField
               control={form.control}
