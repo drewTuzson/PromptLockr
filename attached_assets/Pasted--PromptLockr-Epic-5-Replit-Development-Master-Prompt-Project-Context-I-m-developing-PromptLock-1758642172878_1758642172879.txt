@@ -1,0 +1,301 @@
+# PromptLockr Epic 5: Replit Development Master Prompt
+
+## Project Context
+I'm developing PromptLockr, an AI prompt management platform. The MVP is **100% complete** with all functional requirements implemented. I'm now adding Epic 5's AI-enhanced features to transform it from a storage tool into an AI productivity platform.
+
+## Current Stack & Architecture
+```
+Frontend: React 18 + TypeScript + Vite + Tailwind CSS + Radix UI
+Backend: Express.js + Node.js + TypeScript (98.4% coverage)
+Database: SQL with Drizzle ORM (NOT Replit DB)
+State: React Query + React Hooks
+Auth: Passport.js + JWT
+Routing: Wouter (SPA)
+```
+
+## Replit Configuration Requirements
+
+### 1. Configure `.replit` file for TypeScript compilation:
+```toml
+entrypoint = "server/index.ts"
+modules = ["nodejs-20:v8-20230920-bd784b9"]
+hidden = [".config", "package-lock.json"]
+
+[nix]
+channel = "stable-23_05"
+
+[unitTest]
+language = "nodejs"
+
+[deployment]
+deploymentTarget = "cloudrun"
+build = ["npm", "run", "build"]
+run = ["npm", "start"]
+ignorePorts = false
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5173
+externalPort = 5173
+
+[env]
+NODE_ENV = "development"
+```
+
+### 2. Configure `replit.nix` for dependencies:
+```nix
+{ pkgs }: {
+  deps = [
+    pkgs.nodejs-20_x
+    pkgs.nodePackages.typescript
+    pkgs.nodePackages.typescript-language-server
+    pkgs.nodePackages.npm
+    pkgs.sqlite
+  ];
+}
+```
+
+### 3. Set up Secrets for Epic 5:
+```
+CLAUDE_API_KEY=<anthropic_api_key>
+DATABASE_URL=<sqlite_connection_string>
+JWT_SECRET=<secure_random_string>
+ENHANCEMENT_RATE_LIMIT_FREE=10
+ENHANCEMENT_RATE_LIMIT_PREMIUM=100
+```
+
+## Epic 5 Implementation Phases
+
+### Phase 1: Advanced Search Filters (Current Focus)
+
+**Database Changes Required:**
+```sql
+-- Add performance indexes
+CREATE INDEX idx_prompts_platform ON prompts(platform);
+CREATE INDEX idx_prompts_is_favorite ON prompts(is_favorite);
+CREATE INDEX idx_prompts_last_used ON prompts(last_used);
+CREATE INDEX idx_prompts_created_at ON prompts(created_at);
+CREATE INDEX idx_prompts_updated_at ON prompts(updated_at);
+```
+
+**API Endpoint Extension:**
+Extend `/api/prompts` to accept comprehensive filter parameters:
+- dateCreated, dateModified, lastUsed (date ranges)
+- platforms[], tags[], folders[] (arrays)
+- favoritesOnly, recentOnly (booleans)
+
+**Frontend Components Needed:**
+- AdvancedSearchFilters component using Radix UI
+- DateRangePicker with Radix UI Calendar
+- MultiSelectFilter with Radix UI Checkbox
+- FilterChip display component
+- URL state persistence hook
+
+### Phase 2: AI Prompt Enhancement (Week 3-5)
+
+**Claude API Integration Setup:**
+```typescript
+// server/services/claude-enhancement.ts
+interface ClaudeEnhancementService {
+  enhancePrompt(originalPrompt: string, platform?: string): Promise<string>;
+  validateApiKey(): Promise<boolean>;
+  getRateLimitStatus(userId: string): Promise<RateLimitInfo>;
+}
+```
+
+**Database Schema Changes:**
+```sql
+ALTER TABLE prompts ADD COLUMN enhancement_history TEXT;
+ALTER TABLE prompts ADD COLUMN enhancement_count INTEGER DEFAULT 0;
+ALTER TABLE prompts ADD COLUMN original_prompt_id TEXT REFERENCES prompts(id);
+ALTER TABLE prompts ADD COLUMN is_enhanced BOOLEAN DEFAULT FALSE;
+```
+
+**New API Endpoints:**
+- POST `/api/prompts/:id/enhance`
+- POST `/api/prompts/enhance-new`
+- GET `/api/prompts/:id/enhancement-history`
+
+### Phase 3: Prompt Templates (Week 6-8)
+
+**New Database Tables:**
+```sql
+CREATE TABLE templates (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL,
+  description TEXT,
+  content TEXT NOT NULL,
+  category TEXT,
+  created_at INTEGER DEFAULT (strftime('%s', 'now')),
+  updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+);
+
+CREATE TABLE template_variables (
+  id TEXT PRIMARY KEY,
+  template_id TEXT NOT NULL REFERENCES templates(id),
+  variable_name TEXT NOT NULL,
+  variable_type TEXT CHECK (variable_type IN ('text', 'dropdown', 'number', 'date')),
+  required BOOLEAN DEFAULT FALSE,
+  default_value TEXT,
+  options TEXT,
+  description TEXT
+);
+```
+
+### Phase 4: Public Library (Week 9-12)
+
+**Community Features Schema:**
+```sql
+ALTER TABLE prompts ADD COLUMN is_public BOOLEAN DEFAULT FALSE;
+ALTER TABLE prompts ADD COLUMN public_title TEXT;
+ALTER TABLE prompts ADD COLUMN view_count INTEGER DEFAULT 0;
+ALTER TABLE prompts ADD COLUMN rating_average REAL DEFAULT 0;
+
+CREATE TABLE prompt_ratings (
+  id TEXT PRIMARY KEY,
+  prompt_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+  UNIQUE(prompt_id, user_id)
+);
+```
+
+## Critical Implementation Instructions
+
+### Follow Existing Patterns:
+1. **Database Operations**: Use Drizzle ORM with TypeScript types
+   ```typescript
+   import { db } from '../lib/db/index.js';
+   import { prompts, users } from '../lib/db/schema.js';
+   import { eq, and, like, desc } from 'drizzle-orm';
+   ```
+
+2. **API Routes**: Follow Express.js pattern with authentication middleware
+   ```typescript
+   app.get('/api/prompts', authenticateToken, async (req, res) => {
+     try {
+       // Implementation
+     } catch (error) {
+       res.status(500).json({ error: error.message });
+     }
+   });
+   ```
+
+3. **Frontend State**: Use React Query for server state
+   ```typescript
+   const { data, isLoading } = useQuery({
+     queryKey: ['prompts', filters],
+     queryFn: () => fetchPrompts(filters)
+   });
+   ```
+
+4. **Components**: Use Radix UI primitives with Tailwind styling
+   ```typescript
+   import * as Dialog from '@radix-ui/react-dialog';
+   import * as Checkbox from '@radix-ui/react-checkbox';
+   ```
+
+### Testing in Replit:
+1. **Run development server**: Click "Run" button or use `npm run dev`
+2. **Test API endpoints**: Use Replit's built-in API testing tools
+3. **Database inspection**: Use SQLite viewer in Replit tools
+4. **Environment variables**: Set in Replit Secrets panel
+5. **Performance monitoring**: Use Replit's resource monitor
+
+### Deployment Configuration:
+```json
+{
+  "scripts": {
+    "dev": "NODE_ENV=development nodemon server/index.ts",
+    "build": "vite build && tsc server/**/*.ts --outDir dist/server",
+    "start": "NODE_ENV=production node dist/server/index.js",
+    "db:push": "drizzle-kit push:sqlite",
+    "db:migrate": "drizzle-kit generate:sqlite && drizzle-kit push:sqlite"
+  }
+}
+```
+
+## Session-by-Session Implementation
+
+### Session 1: Database Indexes & Schema Updates
+- Create and run migration scripts for Phase 1 indexes
+- Test query performance improvements
+- Document migration process
+
+### Session 2: Advanced Filter API
+- Extend `/api/prompts` endpoint with filter parameters
+- Implement complex Drizzle ORM queries
+- Add proper TypeScript types for filters
+
+### Session 3: Filter UI Components
+- Create AdvancedSearchFilters component
+- Implement DateRangePicker with Radix UI
+- Add MultiSelectFilter for tags/platforms
+
+### Session 4: Filter State Management
+- Implement URL state persistence
+- Create filter context with React Query
+- Add filter reset and persistence logic
+
+### Session 5: Claude API Integration
+- Set up Anthropic SDK in server
+- Create enhancement service with rate limiting
+- Add error handling and retry logic
+
+### Session 6: Enhancement UI
+- Build side-by-side comparison component
+- Add enhancement history display
+- Create loading and error states
+
+### Session 7: Template Database Layer
+- Run migrations for templates tables
+- Create Drizzle schema definitions
+- Add template CRUD operations
+
+### Session 8: Template Engine
+- Build variable parsing system
+- Create template instantiation logic
+- Add validation for variable types
+
+### Session 9: Template UI
+- Create template editor with variable highlighting
+- Build instantiation wizard
+- Add template library view
+
+### Session 10: Public Library Backend
+- Add public/private flags to prompts
+- Create rating and reporting systems
+- Build moderation queue
+
+### Session 11: Community UI
+- Create public gallery component
+- Add rating and import functionality
+- Build content reporting interface
+
+### Session 12: Integration Testing
+- Test all features together
+- Verify performance metrics
+- Document any issues and fixes
+
+## Success Metrics to Track
+- Advanced search reduces time-to-find by 40%
+- AI enhancement completion within 30 seconds
+- Template adoption by 30% of power users
+- Community engagement by 20% of users
+- Zero breaking changes to existing functionality
+
+## Replit-Specific Tips
+1. Use Replit's Console for debugging TypeScript
+2. Monitor resource usage in Replit's stats panel
+3. Use Replit Database for session storage if needed
+4. Leverage Replit's collaboration features for code review
+5. Use Replit's deployment system for staging environment
+
+## Next Action
+Start with Session 1: Create a new branch for Epic 5, update the `.replit` and `replit.nix` files as shown above, then begin implementing database indexes for Phase 1 Advanced Search Filters.
+
+Remember: Maintain backward compatibility, follow existing patterns exactly, and test each phase thoroughly before moving to the next.
