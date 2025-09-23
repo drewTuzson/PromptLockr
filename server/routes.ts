@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage } from "@shared/schema";
 import { z } from "zod";
 import { ReplitDBAdapter } from "../lib/db/replit-db";
 import { AuthService } from "../lib/auth/jwt-auth";
@@ -12,6 +12,7 @@ import { validateAndSanitizeFilters } from "./utils/filterValidation.js";
 import { buildFilterConditions, buildOrderBy } from "./utils/filterQueryBuilder.js";
 import { sql, eq, and } from "drizzle-orm";
 import { claudeService } from "./services/claudeService.js";
+import { templateEngine } from "./services/templateEngine.js";
 
 const replitDB = new ReplitDBAdapter();
 const healthDB = new Database();
@@ -777,6 +778,370 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error('Error checking rate limit:', error);
       res.status(500).json({ message: 'Failed to check rate limit' });
+    }
+  });
+
+  // Template API endpoints
+  
+  // GET /api/templates - List user templates
+  app.get("/api/templates", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { category, search } = req.query;
+      
+      let whereConditions = [eq(templates.userId, userId)];
+      
+      if (category && typeof category === 'string') {
+        whereConditions.push(eq(templates.category, category));
+      }
+      
+      const userTemplates = await drizzleDB
+        .select()
+        .from(templates)
+        .where(and(...whereConditions));
+      
+      // Get variables for each template
+      const templatesWithVars = await Promise.all(
+        userTemplates.map(async (template) => {
+          const vars = await drizzleDB
+            .select()
+            .from(templateVariables)
+            .where(eq(templateVariables.templateId, template.id))
+            .orderBy(sql`${templateVariables.sortOrder} ASC`);
+          
+          return {
+            ...template,
+            variables: vars,
+            tags: template.tags || []
+          };
+        })
+      );
+      
+      res.json({ templates: templatesWithVars });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching templates:', error);
+      res.status(500).json({ message: 'Failed to fetch templates' });
+    }
+  });
+
+  // POST /api/templates - Create template
+  app.post("/api/templates", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { title, description, content, category, tags, variables } = req.body;
+      
+      // Validate template content
+      const validation = templateEngine.validateTemplate(content);
+      if (!validation.valid) {
+        return res.status(400).json({ 
+          message: 'Invalid template', 
+          errors: validation.errors 
+        });
+      }
+      
+      // Parse variables from content
+      const detectedVars = templateEngine.parseVariables(content);
+      
+      const templateData = {
+        userId,
+        title,
+        description,
+        content,
+        category,
+        tags: tags || [],
+        isPublic: false
+      };
+
+      // Validate template data
+      const validationResult = insertTemplateSchema.safeParse(templateData);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: 'Invalid template data',
+          errors: validationResult.error.issues
+        });
+      }
+      
+      // Create template and variables in a transaction
+      const [template] = await drizzleDB.insert(templates)
+        .values(validationResult.data)
+        .returning();
+      
+      // Create template variables if provided
+      if (variables && Array.isArray(variables)) {
+        const variableData = variables.map((variable: any, index: number) => ({
+          templateId: template.id,
+          variableName: variable.variableName,
+          variableType: variable.variableType || 'text',
+          required: variable.required !== false,
+          defaultValue: variable.defaultValue,
+          options: variable.options,
+          description: variable.description,
+          minValue: variable.minValue,
+          maxValue: variable.maxValue,
+          sortOrder: variable.sortOrder || index
+        }));
+        
+        const validVariables = variableData.filter(v => 
+          insertTemplateVariableSchema.safeParse(v).success
+        );
+        
+        if (validVariables.length > 0) {
+          await drizzleDB.insert(templateVariables)
+            .values(validVariables);
+        }
+      }
+      
+      // Return template with variables
+      const vars = await drizzleDB
+        .select()
+        .from(templateVariables)
+        .where(eq(templateVariables.templateId, template.id))
+        .orderBy(sql`${templateVariables.sortOrder} ASC`);
+      
+      res.json({
+        template: {
+          ...template,
+          variables: vars,
+          detectedVariables: detectedVars
+        }
+      });
+      
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error creating template:', error);
+      res.status(500).json({ message: 'Failed to create template' });
+    }
+  });
+
+  // GET /api/templates/:id - Get template details
+  app.get("/api/templates/:id", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const templateId = req.params.id;
+      
+      const [template] = await drizzleDB
+        .select()
+        .from(templates)
+        .where(and(
+          eq(templates.id, templateId),
+          eq(templates.userId, userId)
+        ));
+      
+      if (!template) {
+        return res.status(404).json({ message: 'Template not found' });
+      }
+      
+      const vars = await drizzleDB
+        .select()
+        .from(templateVariables)
+        .where(eq(templateVariables.templateId, templateId))
+        .orderBy(sql`${templateVariables.sortOrder} ASC`);
+      
+      res.json({
+        template: {
+          ...template,
+          variables: vars,
+          tags: template.tags || []
+        }
+      });
+      
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching template:', error);
+      res.status(500).json({ message: 'Failed to fetch template' });
+    }
+  });
+
+  // POST /api/templates/:id/instantiate - Create prompt from template
+  app.post("/api/templates/:id/instantiate", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const templateId = req.params.id;
+      
+      // Validate request body
+      const validationResult = instantiateTemplateSchema.safeParse({
+        templateId,
+        ...req.body
+      });
+      
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: 'Invalid request data',
+          errors: validationResult.error.issues
+        });
+      }
+      
+      const { variableValues, targetFolder, title } = validationResult.data;
+      
+      // Get template and variables
+      const [template] = await drizzleDB
+        .select()
+        .from(templates)
+        .where(and(
+          eq(templates.id, templateId),
+          eq(templates.userId, userId)
+        ));
+      
+      if (!template) {
+        return res.status(404).json({ message: 'Template not found' });
+      }
+      
+      const vars = await drizzleDB
+        .select()
+        .from(templateVariables)
+        .where(eq(templateVariables.templateId, templateId))
+        .orderBy(sql`${templateVariables.sortOrder} ASC`);
+      
+      // Instantiate template with provided values
+      const { result, validation } = templateEngine.instantiateTemplate(
+        template.content,
+        vars,
+        variableValues
+      );
+      
+      if (!validation.valid) {
+        return res.status(400).json({
+          message: 'Template validation failed',
+          validation
+        });
+      }
+      
+      // Create prompt from instantiated template
+      const promptData = {
+        userId,
+        title: title || `${template.title} - ${new Date().toLocaleDateString()}`,
+        content: result,
+        platform: 'ChatGPT' as const,
+        tags: template.tags || [],
+        folderId: targetFolder || null,
+        isFavorite: false,
+        charCount: result.length.toString()
+      };
+      
+      const promptValidation = insertPromptSchema.safeParse(promptData);
+      if (!promptValidation.success) {
+        return res.status(400).json({ 
+          message: 'Invalid prompt data',
+          errors: promptValidation.error.issues
+        });
+      }
+      
+      const newPrompt = await storage.createPrompt(promptValidation.data);
+      const prompt = newPrompt;
+      
+      // Record template usage
+      await drizzleDB.insert(templateUsage).values({
+        templateId,
+        userId,
+        promptId: prompt.id,
+        variableValues: JSON.stringify(variableValues)
+      });
+      
+      // Update template use count
+      await drizzleDB.update(templates)
+        .set({ 
+          useCount: sql`${templates.useCount} + 1`,
+          updatedAt: new Date()
+        })
+        .where(eq(templates.id, templateId));
+      
+      res.json({ 
+        prompt,
+        templateUsed: template.title
+      });
+      
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error instantiating template:', error);
+      res.status(500).json({ message: 'Failed to instantiate template' });
+    }
+  });
+
+  // DELETE /api/templates/:id - Delete template
+  app.delete("/api/templates/:id", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const templateId = req.params.id;
+      
+      const [template] = await drizzleDB
+        .select()
+        .from(templates)
+        .where(and(
+          eq(templates.id, templateId),
+          eq(templates.userId, userId)
+        ));
+      
+      if (!template) {
+        return res.status(404).json({ message: 'Template not found' });
+      }
+      
+      // Delete template (cascade will handle variables and usage)
+      await drizzleDB.delete(templates)
+        .where(eq(templates.id, templateId));
+      
+      res.json({ message: 'Template deleted successfully' });
+      
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error deleting template:', error);
+      res.status(500).json({ message: 'Failed to delete template' });
+    }
+  });
+
+  // GET /api/templates/:id/usage - Get template usage history
+  app.get("/api/templates/:id/usage", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const templateId = req.params.id;
+      
+      // Verify template ownership
+      const [template] = await drizzleDB
+        .select()
+        .from(templates)
+        .where(and(
+          eq(templates.id, templateId),
+          eq(templates.userId, userId)
+        ));
+      
+      if (!template) {
+        return res.status(404).json({ message: 'Template not found' });
+      }
+      
+      const usage = await drizzleDB
+        .select()
+        .from(templateUsage)
+        .where(eq(templateUsage.templateId, templateId))
+        .orderBy(sql`${templateUsage.createdAt} DESC`);
+      
+      res.json({ 
+        templateId,
+        templateTitle: template.title,
+        useCount: template.useCount || 0,
+        usage: usage.map(u => ({
+          id: u.id,
+          promptId: u.promptId,
+          variableValues: JSON.parse(u.variableValues || '{}'),
+          createdAt: u.createdAt
+        }))
+      });
+      
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching template usage:', error);
+      res.status(500).json({ message: 'Failed to fetch template usage' });
     }
   });
 
