@@ -40,13 +40,10 @@ export default function Login() {
           backgroundAttachment: 'fixed'
         }}
       >
-        {/* Overlay */}
-        <div className="absolute inset-0 bg-black/30" />
-        
         {/* Content */}
-        <div className="relative z-10 w-full max-w-[400px] mx-4 sm:mx-0">
-          <Card className="bg-white/98 shadow-[0_20px_60px_rgba(0,0,0,0.3)] border-0 rounded-2xl">
-            <CardContent className="p-10">
+        <div className="w-full max-w-[400px] mx-4 sm:mx-0">
+          <Card className="!bg-white shadow-[0_10px_40px_rgba(0,0,0,0.1)] border-0 !rounded-xl">
+            <CardContent className="p-12">
               {/* Logo */}
               <div className="flex items-center justify-center mb-8">
                 <div className="flex items-center space-x-3">
@@ -56,22 +53,22 @@ export default function Login() {
                       <path d="M3.09 15.74L12 22L20.91 15.74L12 9.48L3.09 15.74Z"/>
                     </svg>
                   </div>
-                  <h1 className="text-xl font-semibold text-gray-900">PromptLockr</h1>
+                  <h1 className="text-2xl font-semibold text-gray-900">PromptLockr</h1>
                 </div>
               </div>
 
               {/* Title */}
-              <h2 className="text-2xl font-semibold text-gray-900 text-center mb-8">Welcome back</h2>
+              <h2 className="text-[28px] font-bold text-gray-900 text-center mb-8">Welcome back</h2>
               {/* Form */}
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email</Label>
+                  <Label htmlFor="email" className="text-sm font-medium text-[#374151]">Email</Label>
                   <Input
                     data-testid="input-email"
                     id="email"
                     type="email"
                     placeholder="Enter your email"
-                    className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                    className="h-12 text-base bg-white border border-[#e5e7eb] rounded-lg px-4 py-3 focus:border-[#3b82f6] focus:ring-[#3b82f6] focus:ring-1"
                     {...form.register('email')}
                   />
                   {form.formState.errors.email && (
@@ -80,14 +77,14 @@ export default function Login() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
+                  <Label htmlFor="password" className="text-sm font-medium text-[#374151]">Password</Label>
                   <div className="relative">
                     <Input
                       data-testid="input-password"
                       id="password"
                       type={showPassword ? 'text' : 'password'}
                       placeholder="Enter your password"
-                      className="h-12 border-gray-200 focus:border-blue-500 focus:ring-blue-500 pr-12"
+                      className="h-12 text-base bg-white border border-[#e5e7eb] rounded-lg px-4 py-3 pr-12 focus:border-[#3b82f6] focus:ring-[#3b82f6] focus:ring-1"
                       {...form.register('password')}
                     />
                     <Button
@@ -113,7 +110,7 @@ export default function Login() {
                 <Button
                   data-testid="button-login"
                   type="submit"
-                  className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+                  className="w-full h-12 text-base bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
                   disabled={form.formState.isSubmitting}
                 >
                   {form.formState.isSubmitting ? 'Signing in...' : 'Sign in'}
