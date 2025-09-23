@@ -67,6 +67,7 @@ export default function Login() {
                     data-testid="input-email"
                     id="email"
                     type="email"
+                    autoComplete="email"
                     placeholder="Enter your email"
                     className="h-12 text-base bg-white border border-[#e5e7eb] rounded-lg px-4 py-3 focus:border-[#3b82f6] focus:ring-[#3b82f6] focus:ring-1"
                     {...form.register('email')}
@@ -83,6 +84,7 @@ export default function Login() {
                       data-testid="input-password"
                       id="password"
                       type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
                       placeholder="Enter your password"
                       className="h-12 text-base bg-white border border-[#e5e7eb] rounded-lg px-4 py-3 pr-12 focus:border-[#3b82f6] focus:ring-[#3b82f6] focus:ring-1"
                       {...form.register('password')}
