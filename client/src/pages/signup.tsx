@@ -31,7 +31,7 @@ export default function Signup() {
   return (
     <GuestOnly>
       <div 
-        className="min-h-screen flex items-center justify-center relative"
+        className="min-h-screen flex items-center justify-center md:justify-start md:pl-[10%] relative"
         style={{
           backgroundImage: `url(${authBgImage})`,
           backgroundSize: 'cover',
@@ -41,7 +41,7 @@ export default function Signup() {
         }}
       >
         {/* Content */}
-        <div className="w-full max-w-[400px] mx-4 sm:mx-0">
+        <div className="w-full max-w-[400px] mx-4 md:mx-0">
           <Card className="!bg-white shadow-[0_10px_40px_rgba(0,0,0,0.1)] border-0 !rounded-xl">
             <CardContent className="p-12">
               {/* Logo */}
