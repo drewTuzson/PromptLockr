@@ -600,15 +600,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const { platform, tone, focus } = validationResult.data;
 
-      // Get the prompt
-      const [prompt] = await drizzleDB.select()
-        .from(prompts)
-        .where(and(
-          eq(prompts.id, promptId),
-          eq(prompts.userId, userId)
-        ));
+      // Get the prompt using the same storage interface as other endpoints
+      const prompt = await storage.getPrompt(promptId);
 
-      if (!prompt) {
+      if (!prompt || prompt.userId !== userId) {
         return res.status(404).json({ message: 'Prompt not found' });
       }
 

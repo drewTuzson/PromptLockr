@@ -60,7 +60,7 @@ export const enhancementSessions = pgTable("enhancement_sessions", {
 });
 
 export const rateLimits = pgTable("rate_limits", {
-  userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").primaryKey(),
   enhancementCount: integer("enhancement_count").default(0),
   windowStart: timestamp("window_start").defaultNow(),
   lastReset: timestamp("last_reset").defaultNow(),

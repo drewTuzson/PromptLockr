@@ -532,6 +532,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
           onClose={() => setShowEnhancement(false)}
           promptId={editingPrompt?.id}
           initialContent={form.watch('content') || ''}
+          platform={form.watch('platform') || 'ChatGPT'}
           mode={editingPrompt ? 'existing' : 'new'}
           onEnhanced={(enhanced: string) => {
             form.setValue('content', enhanced);

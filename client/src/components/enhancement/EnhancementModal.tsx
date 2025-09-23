@@ -41,6 +41,7 @@ interface EnhancementModalProps {
   onClose: () => void;
   promptId?: string;
   initialContent?: string;
+  platform?: string; // Platform to pre-select in the enhancement form
   mode: 'existing' | 'new'; // For existing prompts or during creation
   onEnhanced?: (enhanced: string) => void; // Callback for new prompt creation
 }
@@ -56,11 +57,12 @@ export function EnhancementModal({
   onClose, 
   promptId, 
   initialContent,
+  platform = 'ChatGPT',
   mode,
   onEnhanced 
 }: EnhancementModalProps) {
   const [options, setOptions] = useState<EnhancementOptions>({
-    platform: 'ChatGPT',
+    platform: platform || 'ChatGPT',
     tone: 'professional',
     focus: 'clarity'
   });
@@ -75,32 +77,21 @@ export function EnhancementModal({
     setOriginalContent(initialContent || '');
   }, [initialContent]);
 
-  // Fetch rate limit with auth header
-  React.useEffect(() => {
-    if (isOpen) {
-      fetch('/api/enhancement/rate-limit', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-      .then(res => res.json())
-      .then(data => {
-        setRateLimit({
-          remaining: data.remaining || 10,
-          limit: data.limit || 10
-        });
-      })
-      .catch(() => {
-        setRateLimit({ remaining: 10, limit: 10 });
-      });
-    }
-  }, [isOpen]);
-
   // Get rate limit status
   const { data: rateLimitStatus, refetch: refetchRateLimit, isLoading: rateLimitLoading } = useQuery<RateLimitStatus>({
     queryKey: ['/api/enhancement/rate-limit'],
     enabled: isOpen
   });
+
+  // Update local rate limit when the query data changes
+  React.useEffect(() => {
+    if (rateLimitStatus) {
+      setRateLimit({
+        remaining: rateLimitStatus.remaining || 10,
+        limit: rateLimitStatus.limit || 10
+      });
+    }
+  }, [rateLimitStatus]);
 
   // Enhancement mutation for existing prompts
   const enhanceExistingMutation = useMutation({

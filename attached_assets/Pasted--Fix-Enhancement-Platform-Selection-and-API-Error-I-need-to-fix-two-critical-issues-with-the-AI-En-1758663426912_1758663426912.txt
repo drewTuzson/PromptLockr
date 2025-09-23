@@ -1,0 +1,200 @@
+# Fix Enhancement Platform Selection and API Error
+
+I need to fix two critical issues with the AI Enhancement feature in PromptLockr:
+
+## Issues to Fix:
+
+1. **Platform Not Carrying Over**: When opening the enhancement modal from an existing Midjourney prompt, the platform defaults to ChatGPT instead of showing Midjourney
+2. **Enhancement API Failing**: Clicking "Enhance" triggers a 500 error with message "Failed to enhance prompt"
+
+## Required Fixes:
+
+### Fix 1: Pass Platform Correctly to Enhancement Modal
+
+Find where the EnhancementModal is being opened from prompt cards and create prompt forms. The platform prop is either not being passed or not being used correctly.
+
+**In the file that renders prompt cards** (likely `PromptCard.tsx` or similar):
+
+When opening the enhancement modal, ensure the platform is passed:
+```typescript
+<EnhancementModal
+  isOpen={showEnhancement}
+  onClose={() => setShowEnhancement(false)}
+  originalContent={prompt.content}
+  platform={prompt.platform || 'ChatGPT'}  // Make sure prompt.platform is passed
+  promptId={prompt.id}
+  onSave={handleEnhancedSave}
+/>
+```
+
+**In the create prompt form** (likely `CreatePromptModal.tsx` or `CreatePromptForm.tsx`):
+
+When opening the enhancement modal, pass the currently selected platform:
+```typescript
+<EnhancementModal
+  isOpen={showEnhancement}
+  onClose={() => setShowEnhancement(false)}
+  originalContent={content}
+  platform={platform || 'ChatGPT'}  // Pass the platform state variable from the form
+  onSave={(enhanced) => {
+    setContent(enhanced);
+    setShowEnhancement(false);
+  }}
+/>
+```
+
+**In `EnhancementModal.tsx`**:
+
+Make sure the platform prop is being used to set the initial state:
+```typescript
+interface EnhancementModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  originalContent: string;
+  platform?: string;  // Ensure this is in props
+  promptId?: string;
+  onSave?: (enhanced: string) => void;
+}
+
+export function EnhancementModal({ 
+  isOpen, 
+  onClose, 
+  originalContent = '',
+  platform = 'ChatGPT',  // Default to ChatGPT if not provided
+  promptId,
+  onSave 
+}: EnhancementModalProps) {
+  // Use the platform prop for the display
+  const [selectedPlatform] = React.useState(platform);
+  
+  // ... rest of component
+```
+
+### Fix 2: Debug and Fix Enhancement API Call
+
+The API is returning a 500 error. Check the enhancement API call in `EnhancementModal.tsx`:
+
+```typescript
+const handleEnhance = async () => {
+  if (!originalContent || originalContent.trim().length === 0) {
+    setError('Please enter content to enhance');
+    return;
+  }
+
+  setIsEnhancing(true);
+  setError('');
+
+  try {
+    const endpoint = promptId 
+      ? `/api/prompts/${promptId}/enhance`
+      : '/api/prompts/enhance-new';
+
+    // Ensure we're sending the correct data structure
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({
+        content: originalContent,
+        platform: selectedPlatform || platform || 'ChatGPT',  // Use the selected platform
+        tone: tone.toLowerCase(),
+        focus: focus.toLowerCase()
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      // Log the actual error for debugging
+      console.error('Enhancement API error:', data);
+      setError(data.message || data.error || 'Failed to enhance prompt');
+      return;
+    }
+
+    if (data.enhanced) {
+      setEnhanced(data.enhanced);
+      setRateLimit(prev => ({
+        ...prev,
+        remaining: Math.max(0, prev.remaining - 1)
+      }));
+    } else {
+      setError('No enhanced content received');
+    }
+  } catch (err) {
+    console.error('Enhancement error:', err);
+    setError('Network error. Please try again.');
+  } finally {
+    setIsEnhancing(false);
+  }
+};
+```
+
+### Fix 3: Verify Backend Enhancement Endpoint
+
+Check that the enhancement endpoints in `server/routes.ts` are properly handling the platform parameter:
+
+For the `/api/prompts/enhance-new` endpoint, ensure it accepts and uses the platform:
+```typescript
+app.post("/api/prompts/enhance-new", async (req, res) => {
+  try {
+    const { userId } = requireAuth(req);
+    const { content, platform, tone, focus } = req.body;
+
+    // Log for debugging
+    console.log('Enhancement request:', { 
+      contentLength: content?.length, 
+      platform, 
+      tone, 
+      focus 
+    });
+
+    if (!content || content.trim().length === 0) {
+      return res.status(400).json({ 
+        message: 'Content is required for enhancement' 
+      });
+    }
+
+    const result = await claudeService.enhancePrompt(
+      content,
+      userId,
+      { 
+        platform: platform || 'ChatGPT', 
+        tone: tone || 'professional', 
+        focus: focus || 'clarity' 
+      }
+    );
+
+    if (!result.success) {
+      console.error('Enhancement failed:', result.error);
+      return res.status(400).json({ 
+        message: result.error || 'Enhancement failed' 
+      });
+    }
+
+    res.json({
+      success: true,
+      enhanced: result.enhanced,
+      original: content,
+      sessionId: result.sessionId
+    });
+
+  } catch (error: any) {
+    console.error('Enhancement error:', error);
+    res.status(500).json({ 
+      message: 'Failed to enhance prompt',
+      error: error.message 
+    });
+  }
+});
+```
+
+## Verification Steps:
+
+1. After fixes, test with a Midjourney prompt - the platform should show "Midjourney" in the enhancement modal
+2. The Enhance button should work without throwing a 500 error
+3. Check browser console for any error logs to help debug if issues persist
+4. Verify the enhanced content appears in the right panel after clicking Enhance
+
+Please apply these fixes to resolve the platform selection and API error issues.

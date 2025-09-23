@@ -226,6 +226,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
           onClose={() => setShowEnhancement(false)}
           promptId={prompt.id}
           initialContent={prompt.content}
+          platform={prompt.platform || 'ChatGPT'}
           mode="existing"
           onEnhanced={async (enhanced) => {
             updatePrompt.mutate({
