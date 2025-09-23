@@ -561,7 +561,7 @@ export default function Dashboard() {
                       >
                         <div className="flex items-center space-x-4 flex-1 min-w-0">
                           <Badge 
-                            className={cn("text-xs px-2.5 py-1 rounded-full font-medium hover-bg-consistent", platformClasses[prompt.platform])}
+                            className={cn("text-xs px-2.5 py-1 rounded-full font-medium hover-bg-consistent", platformClasses[prompt.platform] || platformClasses['Custom/Other'])}
                           >
                             {prompt.platform}
                           </Badge>

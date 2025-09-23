@@ -102,6 +102,14 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
 
   const onSubmit = async (data: PromptFormData) => {
     try {
+      // Validate custom platform name is provided when Custom/Other is selected
+      if (data.platform === 'Custom/Other' && !customPlatform.trim()) {
+        form.setError('platform', { 
+          message: 'Custom platform name is required when Custom/Other is selected' 
+        });
+        return;
+      }
+      
       // Use custom platform name if Custom/Other is selected and custom name is provided
       const finalPlatform = data.platform === 'Custom/Other' && customPlatform.trim() 
         ? customPlatform.trim() 

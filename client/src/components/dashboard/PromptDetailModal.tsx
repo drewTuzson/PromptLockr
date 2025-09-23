@@ -98,7 +98,7 @@ export function PromptDetailModal({ prompt, isOpen, onClose, onEdit }: PromptDet
               </DialogTitle>
               <div className="flex items-center gap-3 flex-wrap">
                 <Badge 
-                  className={cn("text-xs px-3 py-1 rounded-full font-medium", platformClasses[prompt.platform])}
+                  className={cn("text-xs px-3 py-1 rounded-full font-medium", platformClasses[prompt.platform] || platformClasses['Custom/Other'])}
                 >
                   {prompt.platform}
                 </Badge>
