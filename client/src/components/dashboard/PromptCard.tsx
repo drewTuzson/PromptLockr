@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Heart, Copy, MoreVertical, Edit, Trash2 } from 'lucide-react';
+import { Heart, Copy, MoreVertical, Edit, Trash2, Sparkles } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,7 @@ import { Prompt } from '@shared/schema';
 import { useUpdatePrompt, useDeletePrompt } from '@/hooks/usePrompts';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { EnhancementModal } from '@/components/enhancement/EnhancementModal';
 
 interface PromptCardProps {
   prompt: Prompt;
@@ -37,6 +38,7 @@ const platformClasses: Record<string, string> = {
 
 export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [isEnhancementModalOpen, setIsEnhancementModalOpen] = useState(false);
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
   const { toast } = useToast();
@@ -88,13 +90,14 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
   };
 
   return (
-    <Card 
-      data-testid={`card-prompt-${prompt.id}`}
-      className="shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={() => onClick?.(prompt)}
-    >
+    <>
+      <Card 
+        data-testid={`card-prompt-${prompt.id}`}
+        className="shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onClick={() => onClick?.(prompt)}
+      >
       <CardContent className="p-6">
         <div className="flex items-start justify-between mb-4">
           <Badge 
@@ -160,6 +163,15 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
                 <DropdownMenuItem 
                   onClick={(e) => {
                     e.stopPropagation();
+                    setIsEnhancementModalOpen(true);
+                  }}
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Enhance with AI
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.stopPropagation();
                     handleDelete();
                   }}
                   className="text-destructive hover:!bg-destructive hover:!text-destructive-foreground focus:!bg-destructive focus:!text-destructive-foreground"
@@ -206,6 +218,15 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
           <span data-testid="text-char-count">{prompt.charCount} chars</span>
         </div>
       </CardContent>
-    </Card>
+      </Card>
+
+      <EnhancementModal
+        isOpen={isEnhancementModalOpen}
+        onClose={() => setIsEnhancementModalOpen(false)}
+        promptId={prompt.id}
+        initialContent={prompt.content}
+        mode="existing"
+      />
+    </>
   );
 }
