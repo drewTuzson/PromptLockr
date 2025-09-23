@@ -1,0 +1,855 @@
+# Epic 5 Session 4: AI Prompt Enhancement with Claude API
+
+## Session Goals
+Implement AI-powered prompt enhancement using Claude API, including rate limiting, comparison UI, and enhancement history tracking.
+
+## Step 1: Database Schema Updates
+
+Run these migrations to add enhancement tracking:
+
+```sql
+-- Add enhancement fields to prompts table
+ALTER TABLE prompts ADD COLUMN enhancement_history TEXT DEFAULT '[]';
+ALTER TABLE prompts ADD COLUMN enhancement_count INTEGER DEFAULT 0;
+ALTER TABLE prompts ADD COLUMN original_prompt_id TEXT REFERENCES prompts(id);
+ALTER TABLE prompts ADD COLUMN is_enhanced BOOLEAN DEFAULT FALSE;
+
+-- Create enhancement sessions table for tracking
+CREATE TABLE enhancement_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  prompt_id TEXT REFERENCES prompts(id),
+  original_content TEXT NOT NULL,
+  enhanced_content TEXT,
+  platform TEXT,
+  status TEXT CHECK (status IN ('pending', 'success', 'failed')) DEFAULT 'pending',
+  error_message TEXT,
+  api_response_time INTEGER,
+  created_at INTEGER DEFAULT (strftime('%s', 'now'))
+);
+
+-- Create rate limiting table
+CREATE TABLE rate_limits (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  enhancement_count INTEGER DEFAULT 0,
+  window_start INTEGER DEFAULT (strftime('%s', 'now')),
+  last_reset INTEGER DEFAULT (strftime('%s', 'now'))
+);
+
+-- Index for performance
+CREATE INDEX idx_enhancement_sessions_user_id ON enhancement_sessions(user_id);
+CREATE INDEX idx_enhancement_sessions_prompt_id ON enhancement_sessions(prompt_id);
+```
+
+## Step 2: Install Claude SDK and Dependencies
+
+```bash
+npm install @anthropic-ai/sdk dotenv bull
+npm install --save-dev @types/bull
+```
+
+## Step 3: Create Claude Service
+
+Create `server/services/claudeService.ts`:
+
+```typescript
+import Anthropic from '@anthropic-ai/sdk';
+import { db } from '../../lib/db/index.js';
+import { enhancement_sessions, rate_limits } from '../../lib/db/schema.js';
+import { eq, and, gte } from 'drizzle-orm';
+
+interface EnhancementOptions {
+  platform?: string;
+  tone?: 'professional' | 'casual' | 'academic' | 'creative';
+  focus?: 'clarity' | 'engagement' | 'specificity' | 'structure';
+}
+
+interface RateLimitInfo {
+  allowed: boolean;
+  remaining: number;
+  resetsAt: Date;
+  limit: number;
+}
+
+export class ClaudeEnhancementService {
+  private anthropic: Anthropic;
+  private rateLimitWindow = 60 * 60 * 1000; // 1 hour in milliseconds
+  private freeUserLimit = parseInt(process.env.ENHANCEMENT_RATE_LIMIT_FREE || '10');
+  private premiumUserLimit = parseInt(process.env.ENHANCEMENT_RATE_LIMIT_PREMIUM || '100');
+
+  constructor() {
+    if (!process.env.CLAUDE_API_KEY) {
+      throw new Error('CLAUDE_API_KEY is not configured');
+    }
+    
+    this.anthropic = new Anthropic({
+      apiKey: process.env.CLAUDE_API_KEY,
+    });
+  }
+
+  async enhancePrompt(
+    originalPrompt: string, 
+    userId: string,
+    options: EnhancementOptions = {}
+  ): Promise<{
+    success: boolean;
+    enhanced?: string;
+    error?: string;
+    sessionId?: string;
+  }> {
+    // Check rate limit
+    const rateLimit = await this.checkRateLimit(userId);
+    if (!rateLimit.allowed) {
+      return {
+        success: false,
+        error: `Rate limit exceeded. You have ${rateLimit.remaining} enhancements remaining. Resets at ${rateLimit.resetsAt.toLocaleTimeString()}`
+      };
+    }
+
+    // Create enhancement session
+    const sessionId = `enh_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    await db.insert(enhancement_sessions).values({
+      id: sessionId,
+      user_id: userId,
+      original_content: originalPrompt,
+      platform: options.platform,
+      status: 'pending',
+      created_at: new Date()
+    });
+
+    try {
+      const startTime = Date.now();
+      
+      // Build enhancement prompt
+      const systemPrompt = this.buildSystemPrompt(options);
+      
+      // Call Claude API
+      const message = await this.anthropic.messages.create({
+        model: 'claude-3-haiku-20240307', // Using Haiku for cost efficiency
+        max_tokens: 1024,
+        temperature: 0.7,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: `Please optimize this AI prompt for maximum effectiveness:\n\n${originalPrompt}\n\nProvide only the optimized prompt without explanations.`
+          }
+        ]
+      });
+
+      const enhancedContent = message.content[0].type === 'text' 
+        ? message.content[0].text 
+        : '';
+
+      const responseTime = Date.now() - startTime;
+
+      // Update session with success
+      await db.update(enhancement_sessions)
+        .set({
+          enhanced_content: enhancedContent,
+          status: 'success',
+          api_response_time: responseTime
+        })
+        .where(eq(enhancement_sessions.id, sessionId));
+
+      // Increment rate limit counter
+      await this.incrementRateLimit(userId);
+
+      return {
+        success: true,
+        enhanced: enhancedContent,
+        sessionId
+      };
+
+    } catch (error: any) {
+      console.error('Claude API error:', error);
+      
+      // Update session with failure
+      await db.update(enhancement_sessions)
+        .set({
+          status: 'failed',
+          error_message: error.message
+        })
+        .where(eq(enhancement_sessions.id, sessionId));
+
+      return {
+        success: false,
+        error: 'Failed to enhance prompt. Please try again.',
+        sessionId
+      };
+    }
+  }
+
+  private buildSystemPrompt(options: EnhancementOptions): string {
+    let systemPrompt = `You are an expert AI prompt engineer. Your task is to optimize prompts for maximum effectiveness.
+
+OPTIMIZATION REQUIREMENTS:
+- Maintain the original intent and purpose
+- Improve clarity and specificity
+- Add appropriate structure for better AI comprehension
+- Include relevant context or constraints where helpful
+- Ensure actionable outputs
+- Remove ambiguity and redundancy`;
+
+    if (options.platform) {
+      systemPrompt += `\n- Optimize specifically for ${options.platform}`;
+    }
+
+    if (options.tone) {
+      const toneMap = {
+        professional: 'formal and business-appropriate',
+        casual: 'friendly and conversational',
+        academic: 'scholarly and precise',
+        creative: 'imaginative and engaging'
+      };
+      systemPrompt += `\n- Use a ${toneMap[options.tone]} tone`;
+    }
+
+    if (options.focus) {
+      const focusMap = {
+        clarity: 'crystal-clear instructions and expectations',
+        engagement: 'compelling and attention-grabbing language',
+        specificity: 'detailed requirements and constraints',
+        structure: 'well-organized sections and formatting'
+      };
+      systemPrompt += `\n- Focus on ${focusMap[options.focus]}`;
+    }
+
+    return systemPrompt;
+  }
+
+  async checkRateLimit(userId: string): Promise<RateLimitInfo> {
+    const now = Date.now();
+    const windowStart = now - this.rateLimitWindow;
+
+    // Get or create rate limit record
+    let [rateLimitRecord] = await db.select()
+      .from(rate_limits)
+      .where(eq(rate_limits.user_id, userId));
+
+    if (!rateLimitRecord || rateLimitRecord.window_start < windowStart) {
+      // Create new window or reset expired window
+      await db.insert(rate_limits)
+        .values({
+          user_id: userId,
+          enhancement_count: 0,
+          window_start: now,
+          last_reset: now
+        })
+        .onConflictDoUpdate({
+          target: rate_limits.user_id,
+          set: {
+            enhancement_count: 0,
+            window_start: now,
+            last_reset: now
+          }
+        });
+      
+      rateLimitRecord = {
+        user_id: userId,
+        enhancement_count: 0,
+        window_start: now,
+        last_reset: now
+      };
+    }
+
+    // Check user tier (simplified - you'd check actual subscription)
+    const limit = this.freeUserLimit; // TODO: Check user subscription
+    const remaining = Math.max(0, limit - rateLimitRecord.enhancement_count);
+    const resetsAt = new Date(rateLimitRecord.window_start + this.rateLimitWindow);
+
+    return {
+      allowed: remaining > 0,
+      remaining,
+      resetsAt,
+      limit
+    };
+  }
+
+  async incrementRateLimit(userId: string): Promise<void> {
+    await db.update(rate_limits)
+      .set({
+        enhancement_count: sql`enhancement_count + 1`
+      })
+      .where(eq(rate_limits.user_id, userId));
+  }
+
+  async getRateLimitStatus(userId: string): Promise<RateLimitInfo> {
+    return this.checkRateLimit(userId);
+  }
+}
+
+// Export singleton instance
+export const claudeService = new ClaudeEnhancementService();
+```
+
+## Step 4: Create API Endpoints
+
+Add to your `server/routes.ts`:
+
+```typescript
+import { claudeService } from './services/claudeService.js';
+
+// POST /api/prompts/:id/enhance - Enhance existing prompt
+app.post('/api/prompts/:id/enhance', authenticateToken, async (req, res) => {
+  try {
+    const promptId = req.params.id;
+    const userId = req.user.id;
+    const { platform, tone, focus } = req.body;
+
+    // Get the prompt
+    const [prompt] = await db.select()
+      .from(prompts)
+      .where(and(
+        eq(prompts.id, promptId),
+        eq(prompts.userId, userId)
+      ));
+
+    if (!prompt) {
+      return res.status(404).json({ error: 'Prompt not found' });
+    }
+
+    // Enhance the prompt
+    const result = await claudeService.enhancePrompt(
+      prompt.content,
+      userId,
+      { platform: platform || prompt.platform, tone, focus }
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    // Update prompt enhancement history
+    const history = JSON.parse(prompt.enhancement_history || '[]');
+    history.push({
+      sessionId: result.sessionId,
+      timestamp: new Date().toISOString(),
+      enhanced: result.enhanced
+    });
+
+    await db.update(prompts)
+      .set({
+        enhancement_history: JSON.stringify(history),
+        enhancement_count: prompt.enhancement_count + 1
+      })
+      .where(eq(prompts.id, promptId));
+
+    res.json({
+      success: true,
+      enhanced: result.enhanced,
+      original: prompt.content,
+      sessionId: result.sessionId
+    });
+
+  } catch (error) {
+    console.error('Enhancement error:', error);
+    res.status(500).json({ error: 'Failed to enhance prompt' });
+  }
+});
+
+// POST /api/prompts/enhance-new - Enhance during creation
+app.post('/api/prompts/enhance-new', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { content, platform, tone, focus } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    const result = await claudeService.enhancePrompt(
+      content,
+      userId,
+      { platform, tone, focus }
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      enhanced: result.enhanced,
+      original: content,
+      sessionId: result.sessionId
+    });
+
+  } catch (error) {
+    console.error('Enhancement error:', error);
+    res.status(500).json({ error: 'Failed to enhance prompt' });
+  }
+});
+
+// GET /api/prompts/:id/enhancement-history
+app.get('/api/prompts/:id/enhancement-history', authenticateToken, async (req, res) => {
+  try {
+    const promptId = req.params.id;
+    const userId = req.user.id;
+
+    const [prompt] = await db.select()
+      .from(prompts)
+      .where(and(
+        eq(prompts.id, promptId),
+        eq(prompts.userId, userId)
+      ));
+
+    if (!prompt) {
+      return res.status(404).json({ error: 'Prompt not found' });
+    }
+
+    const history = JSON.parse(prompt.enhancement_history || '[]');
+    
+    res.json({
+      promptId,
+      enhancementCount: prompt.enhancement_count,
+      history
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch enhancement history' });
+  }
+});
+
+// GET /api/enhancement/rate-limit - Check rate limit status
+app.get('/api/enhancement/rate-limit', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const status = await claudeService.getRateLimitStatus(userId);
+    
+    res.json(status);
+
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to check rate limit' });
+  }
+});
+```
+
+## Step 5: Create Enhancement UI Components
+
+Create `client/src/components/enhancement/EnhancementPanel.tsx`:
+
+```typescript
+import * as React from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { SparklesIcon, XIcon, RefreshCwIcon, CheckIcon } from 'lucide-react';
+import { useEnhancement } from '../../hooks/useEnhancement';
+
+interface EnhancementPanelProps {
+  originalContent: string;
+  promptId?: string;
+  platform?: string;
+  onSave?: (enhanced: string) => void;
+  onClose?: () => void;
+}
+
+export function EnhancementPanel({
+  originalContent,
+  promptId,
+  platform,
+  onSave,
+  onClose
+}: EnhancementPanelProps) {
+  const [isOpen, setIsOpen] = React.useState(true);
+  const { enhance, isLoading, rateLimit } = useEnhancement();
+  const [enhanced, setEnhanced] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [selectedOption, setSelectedOption] = React.useState<'original' | 'enhanced' | null>(null);
+  
+  // Enhancement options
+  const [tone, setTone] = React.useState<string>('professional');
+  const [focus, setFocus] = React.useState<string>('clarity');
+
+  const handleEnhance = async () => {
+    setError(null);
+    const result = await enhance({
+      content: originalContent,
+      promptId,
+      platform,
+      tone,
+      focus
+    });
+
+    if (result.success) {
+      setEnhanced(result.enhanced);
+      setSelectedOption('enhanced');
+    } else {
+      setError(result.error || 'Enhancement failed');
+    }
+  };
+
+  const handleSave = () => {
+    if (selectedOption === 'enhanced' && enhanced && onSave) {
+      onSave(enhanced);
+    }
+    handleClose();
+  };
+
+  const handleClose = () => {
+    setIsOpen(false);
+    onClose?.();
+  };
+
+  React.useEffect(() => {
+    // Auto-enhance on mount
+    handleEnhance();
+  }, []);
+
+  return (
+    <Dialog.Root open={isOpen} onOpenChange={setIsOpen}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 
+                                 w-[90vw] max-w-6xl h-[80vh] bg-white dark:bg-gray-900 
+                                 rounded-xl shadow-2xl overflow-hidden">
+          
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-3">
+              <SparklesIcon className="w-6 h-6 text-blue-600" />
+              <h2 className="text-xl font-semibold">AI Prompt Enhancement</h2>
+              {rateLimit && (
+                <span className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 rounded-full">
+                  {rateLimit.remaining}/{rateLimit.limit} enhancements remaining
+                </span>
+              )}
+            </div>
+            <Dialog.Close asChild>
+              <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">
+                <XIcon className="w-5 h-5" />
+              </button>
+            </Dialog.Close>
+          </div>
+
+          {/* Options Bar */}
+          <div className="flex gap-4 p-4 bg-gray-50 dark:bg-gray-800/50 border-b 
+                        border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">Tone:</label>
+              <select
+                value={tone}
+                onChange={(e) => setTone(e.target.value)}
+                className="px-3 py-1 text-sm border rounded-lg dark:bg-gray-800"
+                disabled={isLoading}
+              >
+                <option value="professional">Professional</option>
+                <option value="casual">Casual</option>
+                <option value="academic">Academic</option>
+                <option value="creative">Creative</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">Focus:</label>
+              <select
+                value={focus}
+                onChange={(e) => setFocus(e.target.value)}
+                className="px-3 py-1 text-sm border rounded-lg dark:bg-gray-800"
+                disabled={isLoading}
+              >
+                <option value="clarity">Clarity</option>
+                <option value="engagement">Engagement</option>
+                <option value="specificity">Specificity</option>
+                <option value="structure">Structure</option>
+              </select>
+            </div>
+
+            <button
+              onClick={handleEnhance}
+              disabled={isLoading || (rateLimit && rateLimit.remaining === 0)}
+              className="ml-auto px-4 py-1 text-sm bg-blue-600 text-white rounded-lg 
+                       hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
+                       flex items-center gap-2"
+            >
+              <RefreshCwIcon className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? 'Enhancing...' : 'Re-enhance'}
+            </button>
+          </div>
+
+          {/* Content Comparison */}
+          <div className="flex-1 overflow-hidden p-6">
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 
+                            dark:text-red-300 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-6 h-full">
+              {/* Original */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-medium">Original Prompt</h3>
+                  <button
+                    onClick={() => setSelectedOption('original')}
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                      selectedOption === 'original'
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                    }`}
+                  >
+                    {selectedOption === 'original' && <CheckIcon className="w-4 h-4 inline mr-1" />}
+                    Keep Original
+                  </button>
+                </div>
+                <div className="flex-1 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg 
+                              overflow-auto whitespace-pre-wrap">
+                  {originalContent}
+                </div>
+              </div>
+
+              {/* Enhanced */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-medium">Enhanced Prompt</h3>
+                  <button
+                    onClick={() => setSelectedOption('enhanced')}
+                    disabled={!enhanced}
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                      selectedOption === 'enhanced'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50'
+                    }`}
+                  >
+                    {selectedOption === 'enhanced' && <CheckIcon className="w-4 h-4 inline mr-1" />}
+                    Use Enhanced
+                  </button>
+                </div>
+                <div className="flex-1 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg 
+                              overflow-auto whitespace-pre-wrap">
+                  {isLoading ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center">
+                        <SparklesIcon className="w-8 h-8 mx-auto mb-2 text-blue-600 animate-pulse" />
+                        <p className="text-sm text-gray-600">Enhancing your prompt...</p>
+                      </div>
+                    </div>
+                  ) : enhanced ? (
+                    <div className="enhanced-content">{enhanced}</div>
+                  ) : (
+                    <div className="text-gray-500">
+                      Click "Enhance" to optimize your prompt
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={handleClose}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 
+                       dark:hover:bg-gray-800 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!selectedOption}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 
+                       disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save {selectedOption === 'enhanced' ? 'Enhanced' : 'Original'} Prompt
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+```
+
+## Step 6: Create Enhancement Hook
+
+Create `client/src/hooks/useEnhancement.ts`:
+
+```typescript
+import { useState, useEffect } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+
+interface EnhancementOptions {
+  content: string;
+  promptId?: string;
+  platform?: string;
+  tone?: string;
+  focus?: string;
+}
+
+interface EnhancementResult {
+  success: boolean;
+  enhanced?: string;
+  error?: string;
+  sessionId?: string;
+}
+
+export function useEnhancement() {
+  const [rateLimit, setRateLimit] = useState(null);
+
+  // Check rate limit on mount
+  const { data: rateLimitData } = useQuery({
+    queryKey: ['enhancement', 'rate-limit'],
+    queryFn: async () => {
+      const response = await fetch('/api/enhancement/rate-limit', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+  });
+
+  useEffect(() => {
+    if (rateLimitData) {
+      setRateLimit(rateLimitData);
+    }
+  }, [rateLimitData]);
+
+  const enhanceMutation = useMutation({
+    mutationFn: async (options: EnhancementOptions) => {
+      const endpoint = options.promptId 
+        ? `/api/prompts/${options.promptId}/enhance`
+        : '/api/prompts/enhance-new';
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify(options),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Enhancement failed');
+      }
+
+      return data;
+    },
+    onSuccess: (data) => {
+      // Update rate limit after successful enhancement
+      if (rateLimit) {
+        setRateLimit({
+          ...rateLimit,
+          remaining: Math.max(0, rateLimit.remaining - 1)
+        });
+      }
+    },
+  });
+
+  const enhance = async (options: EnhancementOptions): Promise<EnhancementResult> => {
+    try {
+      const result = await enhanceMutation.mutateAsync(options);
+      return result;
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  };
+
+  return {
+    enhance,
+    isLoading: enhanceMutation.isLoading,
+    rateLimit,
+  };
+}
+```
+
+## Step 7: Add Enhancement Button to Prompt Forms
+
+Update your prompt creation/edit forms:
+
+```typescript
+import { EnhancementPanel } from '../components/enhancement/EnhancementPanel';
+
+export function PromptForm({ prompt, onSave }) {
+  const [showEnhancement, setShowEnhancement] = useState(false);
+  const [content, setContent] = useState(prompt?.content || '');
+
+  return (
+    <form>
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        className="w-full p-3 border rounded-lg"
+        rows={10}
+      />
+      
+      <div className="flex gap-2 mt-4">
+        <button
+          type="button"
+          onClick={() => setShowEnhancement(true)}
+          className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 
+                   text-white rounded-lg hover:from-blue-700 hover:to-purple-700
+                   flex items-center gap-2"
+        >
+          <SparklesIcon className="w-4 h-4" />
+          Enhance with AI
+        </button>
+        
+        <button type="submit" className="px-4 py-2 bg-gray-600 text-white rounded-lg">
+          Save Prompt
+        </button>
+      </div>
+
+      {showEnhancement && (
+        <EnhancementPanel
+          originalContent={content}
+          promptId={prompt?.id}
+          platform={prompt?.platform}
+          onSave={(enhanced) => {
+            setContent(enhanced);
+            setShowEnhancement(false);
+          }}
+          onClose={() => setShowEnhancement(false)}
+        />
+      )}
+    </form>
+  );
+}
+```
+
+## Step 8: Environment Variables Setup
+
+Add to your `.env` file in Replit Secrets:
+
+```bash
+CLAUDE_API_KEY=your-anthropic-api-key-here
+ENHANCEMENT_RATE_LIMIT_FREE=10
+ENHANCEMENT_RATE_LIMIT_PREMIUM=100
+```
+
+## Testing Checklist
+
+- [ ] Database migrations completed successfully
+- [ ] Claude API key properly configured
+- [ ] Enhancement endpoint works for new prompts
+- [ ] Enhancement endpoint works for existing prompts
+- [ ] Rate limiting enforces proper limits
+- [ ] Rate limit resets after 1 hour
+- [ ] Enhancement UI shows side-by-side comparison
+- [ ] Re-enhance button generates new versions
+- [ ] Tone and focus options affect output
+- [ ] History tracking stores all enhancements
+- [ ] Error handling for API failures
+- [ ] Loading states display properly
+- [ ] Save buttons work for both original and enhanced
+- [ ] Enhancement count updates in database
+
+## Session 4 Complete!
+
+Your AI Enhancement feature is now ready with:
+- Claude API integration for prompt optimization
+- Rate limiting to control costs
+- Beautiful side-by-side comparison UI
+- Enhancement history tracking
+- Customizable tone and focus options
+
+The feature is production-ready with proper error handling, loading states, and user feedback. Next session will implement Prompt Templates with variable support!
