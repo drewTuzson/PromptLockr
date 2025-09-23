@@ -55,7 +55,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
   const [customPlatform, setCustomPlatform] = useState<string>('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-  const [isEnhancementModalOpen, setIsEnhancementModalOpen] = useState(false);
+  const [showEnhancement, setShowEnhancement] = useState(false);
   
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
@@ -430,7 +430,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                       variant="outline"
                       size="sm"
                       data-testid="button-enhance"
-                      onClick={() => setIsEnhancementModalOpen(true)}
+                      onClick={() => setShowEnhancement(true)}
                       disabled={!field.value.trim()}
                       className="flex items-center gap-2"
                     >
@@ -526,17 +526,19 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
         </Form>
       </DialogContent>
 
-      <EnhancementModal
-        isOpen={isEnhancementModalOpen}
-        onClose={() => setIsEnhancementModalOpen(false)}
-        promptId={editingPrompt?.id}
-        initialContent={form.watch('content') || ''}
-        mode={editingPrompt ? 'existing' : 'new'}
-        onEnhanced={(enhanced: string) => {
-          form.setValue('content', enhanced);
-          setIsEnhancementModalOpen(false);
-        }}
-      />
+      {showEnhancement && (
+        <EnhancementModal
+          isOpen={showEnhancement}
+          onClose={() => setShowEnhancement(false)}
+          promptId={editingPrompt?.id}
+          initialContent={form.watch('content') || ''}
+          mode={editingPrompt ? 'existing' : 'new'}
+          onEnhanced={(enhanced: string) => {
+            form.setValue('content', enhanced);
+            setShowEnhancement(false);
+          }}
+        />
+      )}
     </Dialog>
   );
 }

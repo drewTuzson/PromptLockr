@@ -38,7 +38,7 @@ const platformClasses: Record<string, string> = {
 
 export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
   const [isHovered, setIsHovered] = useState(false);
-  const [isEnhancementModalOpen, setIsEnhancementModalOpen] = useState(false);
+  const [showEnhancement, setShowEnhancement] = useState(false);
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
   const { toast } = useToast();
@@ -163,7 +163,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
                 <DropdownMenuItem 
                   onClick={(e) => {
                     e.stopPropagation();
-                    setIsEnhancementModalOpen(true);
+                    setShowEnhancement(true);
                   }}
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
@@ -220,13 +220,22 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
       </CardContent>
       </Card>
 
-      <EnhancementModal
-        isOpen={isEnhancementModalOpen}
-        onClose={() => setIsEnhancementModalOpen(false)}
-        promptId={prompt.id}
-        initialContent={prompt.content}
-        mode="existing"
-      />
+      {showEnhancement && (
+        <EnhancementModal
+          isOpen={showEnhancement}
+          onClose={() => setShowEnhancement(false)}
+          promptId={prompt.id}
+          initialContent={prompt.content}
+          mode="existing"
+          onEnhanced={async (enhanced) => {
+            updatePrompt.mutate({
+              id: prompt.id,
+              content: enhanced
+            });
+            setShowEnhancement(false);
+          }}
+        />
+      )}
     </>
   );
 }

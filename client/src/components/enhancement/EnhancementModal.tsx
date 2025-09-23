@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -65,9 +65,36 @@ export function EnhancementModal({
     focus: 'clarity'
   });
   const [originalContent, setOriginalContent] = useState(initialContent || '');
+  const [rateLimit, setRateLimit] = useState({ remaining: 10, limit: 10 });
   const [enhancedContent, setEnhancedContent] = useState('');
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const { toast } = useToast();
+
+  // Sync original content when props change
+  React.useEffect(() => {
+    setOriginalContent(initialContent || '');
+  }, [initialContent]);
+
+  // Fetch rate limit with auth header
+  React.useEffect(() => {
+    if (isOpen) {
+      fetch('/api/enhancement/rate-limit', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+      .then(res => res.json())
+      .then(data => {
+        setRateLimit({
+          remaining: data.remaining || 10,
+          limit: data.limit || 10
+        });
+      })
+      .catch(() => {
+        setRateLimit({ remaining: 10, limit: 10 });
+      });
+    }
+  }, [isOpen]);
 
   // Get rate limit status
   const { data: rateLimitStatus, refetch: refetchRateLimit, isLoading: rateLimitLoading } = useQuery<RateLimitStatus>({
@@ -177,7 +204,10 @@ export function EnhancementModal({
   };
 
   const isEnhancing = enhanceExistingMutation.isPending || enhanceNewMutation.isPending;
-  const canEnhance = rateLimitStatus && rateLimitStatus.remaining > 0;
+  const canEnhance = originalContent && 
+                   originalContent.trim().length > 0 && 
+                   rateLimit.remaining > 0 && 
+                   !isEnhancing;
   const resetTime = rateLimitStatus ? new Date(rateLimitStatus.resetTime) : null;
   const showRateLimitWarning = !rateLimitLoading && rateLimitStatus && rateLimitStatus.remaining <= 0;
 
@@ -192,7 +222,7 @@ export function EnhancementModal({
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
               <Clock className="w-4 h-4" />
-              Rate Limit: {rateLimitStatus?.remaining || 0}/{rateLimitStatus?.limit || 10} remaining
+              Rate Limit: {rateLimit.remaining}/{rateLimit.limit} remaining
             </div>
             {resetTime && (
               <div>Resets at {resetTime.toLocaleTimeString()}</div>

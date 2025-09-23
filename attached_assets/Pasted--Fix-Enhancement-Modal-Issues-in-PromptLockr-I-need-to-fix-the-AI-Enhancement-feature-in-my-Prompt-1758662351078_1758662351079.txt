@@ -1,0 +1,113 @@
+# Fix Enhancement Modal Issues in PromptLockr
+
+I need to fix the AI Enhancement feature in my PromptLockr application. The enhancement modal is not receiving prompt content properly and the Enhance button is always disabled.
+
+## Current Issues:
+1. When clicking "Enhance with AI" from an existing prompt's menu, the original content doesn't appear in the modal
+2. When clicking "Enhance with AI" from the create prompt form, the content isn't passed to the modal  
+3. The Enhance button is always disabled even when there's content
+4. Rate limit shows 0/10 instead of fetching the actual limit
+
+## Fix Required:
+
+### 1. In `client/src/components/enhancement/EnhancementModal.tsx`:
+
+Find the section where `canEnhance` is defined and replace it with:
+```typescript
+const canEnhance = originalContent && 
+                   originalContent.trim().length > 0 && 
+                   rateLimit.remaining > 0 && 
+                   !isEnhancing;
+```
+
+Find the useEffect for rate limit and replace/add:
+```typescript
+React.useEffect(() => {
+  if (isOpen) {
+    fetch('/api/enhancement/rate-limit', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    .then(res => res.json())
+    .then(data => {
+      setRateLimit({
+        remaining: data.remaining || 10,
+        limit: data.limit || 10
+      });
+    })
+    .catch(() => {
+      setRateLimit({ remaining: 10, limit: 10 });
+    });
+  }
+}, [isOpen]);
+```
+
+In the section that displays the original content (left column), ensure it shows:
+```typescript
+<div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg min-h-[200px] whitespace-pre-wrap">
+  {originalContent || 'No content provided'}
+</div>
+```
+
+### 2. In the file that exports CreatePromptModal (might be `client/src/components/dashboard/CreatePromptModal.tsx` or `CreatePromptForm.tsx`):
+
+Find where EnhancementModal is rendered and update it to pass the form values:
+```typescript
+{showEnhancement && (
+  <EnhancementModal
+    isOpen={showEnhancement}
+    onClose={() => setShowEnhancement(false)}
+    originalContent={content}
+    platform={platform}
+    onSave={(enhanced) => {
+      setContent(enhanced);
+      setShowEnhancement(false);
+    }}
+  />
+)}
+```
+
+Also ensure the component is exported with the correct name. At the bottom of the file add:
+```typescript
+export { CreatePromptModal };
+```
+Or if it's named differently, update the import statements to match.
+
+### 3. In `client/src/components/prompts/PromptCard.tsx` (or wherever prompt cards are rendered):
+
+Find where EnhancementModal is rendered from the three-dot menu and update to:
+```typescript
+{showEnhancement && (
+  <EnhancementModal
+    isOpen={showEnhancement}
+    onClose={() => setShowEnhancement(false)}
+    originalContent={prompt.content}
+    platform={prompt.platform}
+    promptId={prompt.id}
+    onSave={async (enhanced) => {
+      await fetch(`/api/prompts/${prompt.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          ...prompt,
+          content: enhanced
+        })
+      });
+      window.location.reload();
+    }}
+  />
+)}
+```
+
+## Verification:
+After making these changes:
+1. The enhancement modal should show the original prompt content
+2. The Enhance button should be clickable when content exists
+3. The rate limit should show 10/10 (or actual limit)
+4. Enhanced content should save properly
+
+Please apply these specific fixes to enable the AI enhancement feature to work correctly.
