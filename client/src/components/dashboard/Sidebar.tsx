@@ -14,7 +14,8 @@ import {
   Settings,
   LogOut,
   Check,
-  X
+  X,
+  File
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -174,6 +175,21 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
               <Badge variant="secondary" className="ml-auto text-xs px-2 py-1 rounded-full">
                 {trashedPrompts.length}
               </Badge>
+            </div>
+          </Link>
+          
+          <Link href="/dashboard/templates" className="block">
+            <div
+              data-testid="link-templates"
+              className={cn(
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
+                location === '/dashboard/templates'
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground"
+              )}
+            >
+              <File className="w-4 h-4" />
+              <span>Templates</span>
             </div>
           </Link>
         </nav>

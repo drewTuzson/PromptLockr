@@ -21,6 +21,7 @@ function Router() {
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/dashboard/:view" component={Dashboard} />
       <Route path="/dashboard/folder/:folderId" component={Dashboard} />
+      <Route path="/dashboard/templates" component={Dashboard} />
       <Route path="/settings" component={Settings} />
       <Route path="/test-auth" component={TestAuth} />
       {/* Fallback to 404 */}

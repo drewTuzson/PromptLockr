@@ -4,16 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MoreVertical, FileText, Eye, Trash2, Play, Clock, BarChart3 } from 'lucide-react';
-import { type Template } from '@shared/schema';
+import { type Template, type TemplateVariable } from '@shared/schema';
 
 interface TemplateCardProps {
   template: Template & {
-    variables: Array<{
-      id: string;
-      variableName: string;
-      variableType: string;
-      required: boolean;
-    }>;
+    variables: TemplateVariable[];
   };
   onView: (template: TemplateCardProps['template']) => void;
   onEdit: (template: TemplateCardProps['template']) => void;
@@ -44,7 +39,7 @@ export function TemplateCard({
   };
 
   const variableCount = template.variables?.length || 0;
-  const requiredVariables = template.variables?.filter(v => v.required).length || 0;
+  const requiredVariables = template.variables?.filter(v => v.required === true).length || 0;
   
   // Truncate content for preview
   const contentPreview = template.content.length > 150 

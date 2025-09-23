@@ -7,6 +7,7 @@ import { SearchBar } from '@/components/dashboard/SearchBar';
 import { PromptCard } from '@/components/dashboard/PromptCard';
 import { CreatePromptModal } from '@/components/dashboard/CreatePromptModal';
 import { PromptDetailModal } from '@/components/dashboard/PromptDetailModal';
+import { TemplateCard, CreateTemplateModal, TemplateDetailModal, TemplateInstantiationModal } from '@/components/templates';
 import { AdvancedSearchFilters } from '@/components/filters/AdvancedSearchFilters';
 import {
   AlertDialog,
@@ -31,6 +32,7 @@ import { usePrompts, useFavoritePrompts, useRecentPrompts, useTrashedPrompts, us
 import { useFolders } from '@/hooks/useFolders';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFilteredPrompts } from '@/hooks/useFilteredPrompts';
+import { useTemplates, useDeleteTemplate, useInstantiateTemplate, TemplateWithVariables } from '@/hooks/useTemplates';
 import { Prompt, Folder } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -81,10 +83,19 @@ export default function Dashboard() {
   const { data: recentPrompts = [], isLoading: recentLoading } = useRecentPrompts();
   const { data: trashedPrompts = [], isLoading: trashedLoading } = useTrashedPrompts();
   const { data: folders = [] } = useFolders();
+  const { data: templates = [], isLoading: templatesLoading } = useTemplates();
   
   // Trash actions
   const restorePrompt = useRestorePrompt();
   const permanentlyDeletePrompt = usePermanentlyDeletePrompt();
+  const deleteTemplate = useDeleteTemplate();
+  const instantiateTemplate = useInstantiateTemplate();
+  
+  // Template-related state
+  const [createTemplateModalOpen, setCreateTemplateModalOpen] = useState(false);
+  const [detailTemplate, setDetailTemplate] = useState<TemplateWithVariables | null>(null);
+  const [instantiatingTemplate, setInstantiatingTemplate] = useState<TemplateWithVariables | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<TemplateWithVariables | undefined>();
   
   // Determine which prompts to show based on view and filtering method
   let sourcePrompts: Prompt[] = [];
@@ -117,6 +128,11 @@ export default function Dashboard() {
         // Filter prompts by the specified folder
         sourcePrompts = allPrompts.filter(p => p.folderId === folderId);
         isLoading = allLoading;
+        break;
+      case 'templates':
+        // Templates view - will be handled differently in rendering
+        sourcePrompts = [];
+        isLoading = templatesLoading;
         break;
       default:
         sourcePrompts = allPrompts;
@@ -549,8 +565,102 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* Templates Display */}
+            {view === 'templates' && !isLoading && templates.length > 0 && (
+              <>
+                {viewMode === 'card' ? (
+                  <div 
+                    data-testid="templates-grid"
+                    className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+                  >
+                    {templates.map((template) => (
+                      <TemplateCard
+                        key={template.id}
+                        template={template}
+                        onView={setDetailTemplate}
+                        onEdit={setEditingTemplate}
+                        onDelete={(templateId) => deleteTemplate.mutate(templateId)}
+                        onInstantiate={setInstantiatingTemplate}
+                        onViewUsage={(templateId) => {
+                          // TODO: Implement usage viewing
+                          console.log('View usage for template:', templateId);
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  // List View for templates
+                  <div 
+                    data-testid="templates-list" 
+                    className="space-y-2"
+                  >
+                    {templates.map((template) => (
+                      <div 
+                        key={template.id} 
+                        className="flex items-center justify-between p-4 bg-card border rounded-lg hover:shadow-sm transition-shadow cursor-pointer group"
+                        onClick={() => setDetailTemplate(template)}
+                        data-testid={`list-item-template-${template.id}`}
+                      >
+                        <div className="flex items-center space-x-4 flex-1 min-w-0">
+                          <Badge 
+                            className="text-xs px-2.5 py-1 rounded-full font-medium bg-accent text-accent-foreground"
+                          >
+                            Template
+                          </Badge>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-foreground truncate" data-testid="text-template-title">
+                              {template.title}
+                            </h3>
+                            {template.description && (
+                              <p className="text-sm text-muted-foreground truncate">
+                                {template.description}
+                              </p>
+                            )}
+                          </div>
+                          {/* Template Variables Count */}
+                          <div className="flex items-center space-x-1 flex-shrink-0">
+                            <Badge variant="outline" className="text-xs">
+                              {template.variables?.length || 0} variables
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground flex-shrink-0">
+                            {template.createdAt ? new Date(template.createdAt).toLocaleDateString() : 'No date'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Empty state for templates */}
+            {view === 'templates' && !isLoading && templates.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-8 h-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">No templates found</h3>
+                <p className="text-muted-foreground mb-6">
+                  Get started by creating your first template.
+                </p>
+                <Button
+                  data-testid="button-create-first-template"
+                  onClick={() => setCreateTemplateModalOpen(true)}
+                  className="flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Create Your First Template</span>
+                </Button>
+              </div>
+            )}
+
             {/* Prompts Display */}
-            {!isLoading && prompts.length > 0 && (
+            {view !== 'templates' && !isLoading && prompts.length > 0 && (
               <>
                 {viewMode === 'card' ? (
                   <div 
@@ -756,6 +866,42 @@ export default function Dashboard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Template Modals */}
+      <CreateTemplateModal
+        isOpen={createTemplateModalOpen}
+        onClose={() => {
+          setCreateTemplateModalOpen(false);
+          setEditingTemplate(undefined);
+        }}
+        onSubmit={async (templateData) => {
+          // TODO: Implement template creation
+          console.log('Creating template:', templateData);
+          setCreateTemplateModalOpen(false);
+        }}
+        initialContent={editingTemplate?.content || ''}
+      />
+
+      {detailTemplate && (
+        <TemplateDetailModal
+          template={detailTemplate}
+          isOpen={true}
+          onClose={() => setDetailTemplate(null)}
+        />
+      )}
+
+      {instantiatingTemplate && (
+        <TemplateInstantiationModal
+          isOpen={!!instantiatingTemplate}
+          onClose={() => setInstantiatingTemplate(null)}
+          template={instantiatingTemplate}
+          onInstantiate={async (data) => {
+            await instantiateTemplate.mutateAsync(data);
+            setInstantiatingTemplate(null);
+          }}
+          folders={folders}
+        />
+      )}
     </RequireAuth>
   );
 }
