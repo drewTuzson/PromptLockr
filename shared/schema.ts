@@ -134,6 +134,23 @@ export const signupSchema = z.object({
 export type LoginData = z.infer<typeof loginSchema>;
 export type SignupData = z.infer<typeof signupSchema>;
 
+// Enhancement schemas
+export const enhancePromptSchema = z.object({
+  platform: z.string().optional(),
+  tone: z.enum(['professional', 'casual', 'academic', 'creative']).optional(),
+  focus: z.enum(['clarity', 'engagement', 'specificity', 'structure']).optional(),
+});
+
+export const enhanceNewPromptSchema = z.object({
+  content: z.string().min(1).max(10000), // Limit content size
+  platform: z.string().optional(),
+  tone: z.enum(['professional', 'casual', 'academic', 'creative']).optional(),
+  focus: z.enum(['clarity', 'engagement', 'specificity', 'structure']).optional(),
+});
+
+export type EnhancePrompt = z.infer<typeof enhancePromptSchema>;
+export type EnhanceNewPrompt = z.infer<typeof enhanceNewPromptSchema>;
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   folders: many(folders),

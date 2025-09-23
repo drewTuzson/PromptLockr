@@ -41,10 +41,18 @@ export class ClaudeEnhancementService {
   private rateLimitWindow = 60 * 60 * 1000; // 1 hour in milliseconds
   private freeUserLimit = parseInt(process.env.ENHANCEMENT_RATE_LIMIT_FREE || '10');
   private premiumUserLimit = parseInt(process.env.ENHANCEMENT_RATE_LIMIT_PREMIUM || '100');
+  private initialized = false;
 
   constructor() {
-    if (!process.env.CLAUDE_API_KEY) {
-      throw new Error('CLAUDE_API_KEY is not configured');
+    // Lazy initialization - API key checked on first use
+  }
+
+  private ensureInitialized() {
+    if (!this.initialized) {
+      if (!process.env.CLAUDE_API_KEY) {
+        throw new Error('CLAUDE_API_KEY is not configured');
+      }
+      this.initialized = true;
     }
   }
 
@@ -58,6 +66,9 @@ export class ClaudeEnhancementService {
     error?: string;
     sessionId?: string;
   }> {
+    // Ensure service is initialized
+    this.ensureInitialized();
+    
     // Check rate limit
     const rateLimit = await this.checkRateLimit(userId);
     if (!rateLimit.allowed) {
@@ -255,7 +266,54 @@ OPTIMIZATION REQUIREMENTS:
   }
 
   async getRateLimitStatus(userId: string): Promise<RateLimitInfo> {
+    // Note: Rate limit check doesn't need API key, so no ensureInitialized() call needed
     return this.checkRateLimit(userId);
+  }
+
+  // New method for API-only calls (no DB writes)
+  async callClaudeAPIOnly(
+    originalPrompt: string,
+    options: EnhancementOptions = {}
+  ): Promise<{
+    success: boolean;
+    enhanced?: string;
+    error?: string;
+  }> {
+    this.ensureInitialized();
+    
+    try {
+      const systemPrompt = this.buildSystemPrompt(options);
+      const enhancedContent = await this.callClaudeAPI(systemPrompt, originalPrompt);
+      
+      return {
+        success: true,
+        enhanced: enhancedContent
+      };
+    } catch (error: any) {
+      console.error('Claude API error:', error);
+      
+      // Map API key errors to appropriate status
+      if (error.message === 'CLAUDE_API_KEY is not configured') {
+        return {
+          success: false,
+          error: 'Enhancement service is not configured'
+        };
+      }
+      
+      return {
+        success: false,
+        error: 'Failed to enhance prompt. Please try again.'
+      };
+    }
+  }
+
+  // New method for transaction-aware rate limit increment
+  async incrementRateLimitInTx(userId: string, tx: any): Promise<void> {
+    await tx.update(rateLimits)
+      .set({
+        enhancementCount: sql`${rateLimits.enhancementCount} + 1`
+      })
+      .where(eq(rateLimits.userId, userId));
   }
 }
 

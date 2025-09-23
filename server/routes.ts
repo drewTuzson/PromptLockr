@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema } from "@shared/schema";
 import { z } from "zod";
 import { ReplitDBAdapter } from "../lib/db/replit-db";
 import { AuthService } from "../lib/auth/jwt-auth";
@@ -10,7 +10,8 @@ import { db as drizzleDB } from "./db.js";
 import { prompts } from "@shared/schema";
 import { validateAndSanitizeFilters } from "./utils/filterValidation.js";
 import { buildFilterConditions, buildOrderBy } from "./utils/filterQueryBuilder.js";
-import { sql } from "drizzle-orm";
+import { sql, eq, and } from "drizzle-orm";
+import { claudeService } from "./services/claudeService.js";
 
 const replitDB = new ReplitDBAdapter();
 const healthDB = new Database();
@@ -576,6 +577,206 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error('Error importing data:', error);
       res.status(500).json({ message: "Failed to import data" });
+    }
+  });
+
+  // Enhancement API endpoints
+  
+  // POST /api/prompts/:id/enhance - Enhance existing prompt
+  app.post("/api/prompts/:id/enhance", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const promptId = req.params.id;
+      
+      // Validate request body
+      const validationResult = enhancePromptSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: 'Invalid request data',
+          errors: validationResult.error.issues
+        });
+      }
+      
+      const { platform, tone, focus } = validationResult.data;
+
+      // Get the prompt
+      const [prompt] = await drizzleDB.select()
+        .from(prompts)
+        .where(and(
+          eq(prompts.id, promptId),
+          eq(prompts.userId, userId)
+        ));
+
+      if (!prompt) {
+        return res.status(404).json({ message: 'Prompt not found' });
+      }
+
+      // Validate existing prompt content size
+      if (prompt.content.length > 10000) {
+        return res.status(400).json({ 
+          message: 'Prompt content is too long for enhancement (max 10,000 characters)' 
+        });
+      }
+
+      // Check rate limit first
+      const rateLimitStatus = await claudeService.getRateLimitStatus(userId);
+      if (!rateLimitStatus.allowed) {
+        return res.status(429).json({
+          message: `Rate limit exceeded. You have ${rateLimitStatus.remaining} enhancements remaining. Resets at ${rateLimitStatus.resetsAt.toLocaleTimeString()}`,
+          rateLimitStatus
+        });
+      }
+
+      // Use transaction for atomicity
+      const result = await drizzleDB.transaction(async (tx) => {
+        // Make direct Claude API call (no DB writes in service)
+        const enhanceResult = await claudeService.callClaudeAPIOnly(
+          prompt.content,
+          { platform: platform || prompt.platform || 'ChatGPT', tone, focus }
+        );
+
+        if (!enhanceResult.success) {
+          throw new Error(enhanceResult.error || 'Enhancement failed');
+        }
+
+        // Parse existing history safely
+        let existingHistory;
+        try {
+          existingHistory = prompt.enhancementHistory ? JSON.parse(prompt.enhancementHistory) : [];
+        } catch (error) {
+          console.error('Failed to parse enhancement history:', error);
+          existingHistory = []; // Reset corrupted history
+        }
+
+        const sessionId = `enh_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const newHistoryEntry = {
+          sessionId,
+          timestamp: new Date().toISOString(),
+          enhanced: enhanceResult.enhanced,
+          options: { platform: platform || prompt.platform || 'ChatGPT', tone, focus }
+        };
+        existingHistory.push(newHistoryEntry);
+
+        // Update prompt with history (atomic count increment)
+        await tx.update(prompts)
+          .set({
+            enhancementHistory: JSON.stringify(existingHistory),
+            enhancementCount: sql`${prompts.enhancementCount} + 1`
+          })
+          .where(eq(prompts.id, promptId));
+
+        // Increment rate limit
+        await claudeService.incrementRateLimitInTx(userId, tx);
+
+        return { ...enhanceResult, sessionId };
+      });
+
+      res.json({
+        success: true,
+        enhanced: result.enhanced,
+        original: prompt.content,
+        sessionId: result.sessionId
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Enhancement error:', error);
+      res.status(500).json({ message: 'Failed to enhance prompt' });
+    }
+  });
+
+  // POST /api/prompts/enhance-new - Enhance during creation
+  app.post("/api/prompts/enhance-new", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      // Validate request body
+      const validationResult = enhanceNewPromptSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: 'Invalid request data',
+          errors: validationResult.error.issues
+        });
+      }
+      
+      const { content, platform, tone, focus } = validationResult.data;
+
+      const result = await claudeService.enhancePrompt(
+        content,
+        userId,
+        { platform: platform || 'ChatGPT', tone, focus }
+      );
+
+      if (!result.success) {
+        return res.status(400).json({ message: result.error });
+      }
+
+      res.json({
+        success: true,
+        enhanced: result.enhanced,
+        original: content,
+        sessionId: result.sessionId
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Enhancement error:', error);
+      res.status(500).json({ message: 'Failed to enhance prompt' });
+    }
+  });
+
+  // GET /api/prompts/:id/enhancement-history
+  app.get("/api/prompts/:id/enhancement-history", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const promptId = req.params.id;
+
+      const [prompt] = await drizzleDB.select()
+        .from(prompts)
+        .where(and(
+          eq(prompts.id, promptId),
+          eq(prompts.userId, userId)
+        ));
+
+      if (!prompt) {
+        return res.status(404).json({ message: 'Prompt not found' });
+      }
+
+      const history = prompt.enhancementHistory ? JSON.parse(prompt.enhancementHistory) : [];
+      
+      res.json({
+        promptId,
+        enhancementCount: prompt.enhancementCount || 0,
+        history
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching enhancement history:', error);
+      res.status(500).json({ message: 'Failed to fetch enhancement history' });
+    }
+  });
+
+  // GET /api/enhancement/rate-limit - Check rate limit status
+  app.get("/api/enhancement/rate-limit", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const status = await claudeService.getRateLimitStatus(userId);
+      
+      res.json(status);
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error checking rate limit:', error);
+      res.status(500).json({ message: 'Failed to check rate limit' });
     }
   });
 
