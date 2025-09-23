@@ -1,264 +1,397 @@
-// client/src/components/enhancement/EnhancementModal.tsx
-import * as React from "react";
-import { SparklesIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useToast } from '@/hooks/use-toast';
+import { Sparkles, Copy, RotateCcw, Clock, AlertCircle } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+
+interface RateLimitStatus {
+  limit: number;
+  remaining: number;
+  resetTime: string;
+}
+
+interface EnhanceResponse {
+  enhanced: string;
+  original?: string;
+  sessionId: string;
+  success: boolean;
+}
 
 interface EnhancementModalProps {
   isOpen: boolean;
   onClose: () => void;
-  originalContent: string;
-  platform?: string;
   promptId?: string;
-  onSave?: (enhanced: string) => void;
+  initialContent?: string;
+  mode: 'existing' | 'new'; // For existing prompts or during creation
+  onEnhanced?: (enhanced: string) => void; // Callback for new prompt creation
 }
 
-export function EnhancementModal({
-  isOpen,
-  onClose,
-  originalContent = "",
-  platform = "ChatGPT",
-  promptId,
-  onSave,
+interface EnhancementOptions {
+  platform?: string;
+  tone?: 'professional' | 'casual' | 'academic' | 'creative';
+  focus?: 'clarity' | 'engagement' | 'specificity' | 'structure';
+}
+
+export function EnhancementModal({ 
+  isOpen, 
+  onClose, 
+  promptId, 
+  initialContent,
+  mode,
+  onEnhanced 
 }: EnhancementModalProps) {
-  const [tone, setTone] = React.useState("Creative");
-  const [focus, setFocus] = React.useState("Clarity");
-  const [isEnhancing, setIsEnhancing] = React.useState(false);
-  const [enhanced, setEnhanced] = React.useState("");
-  const [error, setError] = React.useState("");
-  const [rateLimit, setRateLimit] = React.useState({
-    remaining: 10,
-    limit: 10,
+  const [options, setOptions] = useState<EnhancementOptions>({
+    platform: 'ChatGPT',
+    tone: 'professional',
+    focus: 'clarity'
+  });
+  const [originalContent, setOriginalContent] = useState(initialContent || '');
+  const [enhancedContent, setEnhancedContent] = useState('');
+  const [currentSessionId, setCurrentSessionId] = useState<string>('');
+  const { toast } = useToast();
+
+  // Get rate limit status
+  const { data: rateLimitStatus, refetch: refetchRateLimit, isLoading: rateLimitLoading } = useQuery<RateLimitStatus>({
+    queryKey: ['/api/enhancement/rate-limit'],
+    enabled: isOpen
   });
 
-  // Fetch rate limit on mount
-  React.useEffect(() => {
-    fetchRateLimit();
-  }, []);
-
-  const fetchRateLimit = async () => {
-    try {
-      const response = await fetch("/api/enhancement/rate-limit", {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
+  // Enhancement mutation for existing prompts
+  const enhanceExistingMutation = useMutation({
+    mutationFn: async (data: EnhancementOptions) => {
+      const res = await apiRequest('POST', `/api/prompts/${promptId}/enhance`, {
+        platform: data.platform,
+        tone: data.tone,
+        focus: data.focus
       });
-      if (response.ok) {
-        const data = await response.json();
-        setRateLimit({
-          remaining: data.remaining || 10,
-          limit: data.limit || 10,
-        });
+      return res.json();
+    },
+    onSuccess: (response: EnhanceResponse) => {
+      setEnhancedContent(response.enhanced);
+      setCurrentSessionId(response.sessionId);
+      if (response.original) setOriginalContent(response.original);
+      refetchRateLimit();
+      // Invalidate cache for history and prompts
+      if (promptId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/prompts', promptId, 'enhancement-history'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/prompts'] });
       }
-    } catch (err) {
-      console.error("Failed to fetch rate limit:", err);
+      toast({
+        title: 'Enhancement complete!',
+        description: 'Your prompt has been enhanced with AI.',
+      });
+    },
+    onError: (error: any) => {
+      const message = error.message || 'Failed to enhance prompt';
+      toast({
+        variant: 'destructive',
+        title: 'Enhancement failed',
+        description: message,
+      });
+    }
+  });
+
+  // Enhancement mutation for new prompts
+  const enhanceNewMutation = useMutation({
+    mutationFn: async (data: { content: string } & EnhancementOptions) => {
+      const res = await apiRequest('POST', '/api/prompts/enhance-new', data);
+      return res.json();
+    },
+    onSuccess: (response: EnhanceResponse) => {
+      setEnhancedContent(response.enhanced);
+      setCurrentSessionId(response.sessionId);
+      refetchRateLimit();
+      toast({
+        title: 'Enhancement complete!',
+        description: 'Your prompt has been enhanced with AI.',
+      });
+    },
+    onError: (error: any) => {
+      const message = error.message || 'Failed to enhance prompt';
+      toast({
+        variant: 'destructive',
+        title: 'Enhancement failed',
+        description: message,
+      });
+    }
+  });
+
+  const handleEnhance = () => {
+    if (mode === 'existing' && promptId) {
+      enhanceExistingMutation.mutate(options);
+    } else if (mode === 'new' && originalContent) {
+      enhanceNewMutation.mutate({
+        content: originalContent,
+        ...options
+      });
     }
   };
 
-  const handleEnhance = async () => {
-    if (!originalContent || originalContent.trim().length === 0) {
-      setError("Please enter content to enhance");
-      return;
-    }
-
-    setIsEnhancing(true);
-    setError("");
-
+  const handleCopyEnhanced = async () => {
+    if (!enhancedContent) return;
+    
     try {
-      const endpoint = promptId
-        ? `/api/prompts/${promptId}/enhance`
-        : "/api/prompts/enhance-new";
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify({
-          content: originalContent,
-          platform: platform,
-          tone: tone.toLowerCase(),
-          focus: focus.toLowerCase(),
-        }),
+      await navigator.clipboard.writeText(enhancedContent);
+      toast({
+        title: 'Copied to clipboard',
+        description: 'Enhanced content has been copied.',
       });
-
-      const data = await response.json();
-
-      if (response.ok && data.enhanced) {
-        setEnhanced(data.enhanced);
-        setRateLimit((prev) => ({
-          ...prev,
-          remaining: Math.max(0, prev.remaining - 1),
-        }));
-      } else {
-        setError(data.error || "Failed to enhance prompt");
-      }
-    } catch (err) {
-      setError("Network error. Please try again.");
-    } finally {
-      setIsEnhancing(false);
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to copy',
+        description: 'Could not copy content to clipboard.',
+      });
     }
   };
 
   const handleUseEnhanced = () => {
-    if (onSave && enhanced) {
-      onSave(enhanced);
-      onClose();
+    if (enhancedContent && onEnhanced) {
+      onEnhanced(enhancedContent);
     }
+    onClose();
   };
 
-  // The key fix: enable button when content exists and user has rate limit
-  const canEnhance =
-    originalContent &&
-    originalContent.trim().length > 0 &&
-    rateLimit.remaining > 0 &&
-    !isEnhancing;
+  const handleReset = () => {
+    setEnhancedContent('');
+    setCurrentSessionId('');
+  };
 
-  if (!isOpen) return null;
+  const isEnhancing = enhanceExistingMutation.isPending || enhanceNewMutation.isPending;
+  const canEnhance = rateLimitStatus && rateLimitStatus.remaining > 0;
+  const resetTime = rateLimitStatus ? new Date(rateLimitStatus.resetTime) : null;
+  const showRateLimitWarning = !rateLimitLoading && rateLimitStatus && rateLimitStatus.remaining <= 0;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-5xl w-full max-h-[85vh] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b">
-          <div className="flex items-center gap-3">
-            <SparklesIcon className="w-6 h-6 text-purple-600" />
-            <h2 className="text-xl font-semibold">AI Prompt Enhancement</h2>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              Rate Limit: {rateLimit.remaining}/{rateLimit.limit} remaining
-            </span>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg"
-            >
-              <XIcon className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Options */}
-        <div className="flex gap-6 p-4 bg-gray-50 dark:bg-gray-800/50">
-          <div>
-            <label className="text-sm font-medium mb-1 block">
-              Target Platform
-            </label>
-            <select
-              value={platform}
-              disabled
-              className="px-3 py-1 text-sm border rounded-lg bg-gray-100"
-            >
-              <option value="ChatGPT">ChatGPT</option>
-              <option value="Claude">Claude</option>
-              <option value="Midjourney">Midjourney</option>
-              <option value="Gemini">Gemini</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium mb-1 block">Tone</label>
-            <select
-              value={tone}
-              onChange={(e) => setTone(e.target.value)}
-              className="px-3 py-1 text-sm border rounded-lg"
-            >
-              <option value="Creative">Creative</option>
-              <option value="Professional">Professional</option>
-              <option value="Casual">Casual</option>
-              <option value="Academic">Academic</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium mb-1 block">Focus</label>
-            <select
-              value={focus}
-              onChange={(e) => setFocus(e.target.value)}
-              className="px-3 py-1 text-sm border rounded-lg"
-            >
-              <option value="Clarity">Clarity</option>
-              <option value="Engagement">Engagement</option>
-              <option value="Specificity">Specificity</option>
-              <option value="Structure">Structure</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Error Display */}
-        {error && (
-          <div className="mx-6 mt-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 rounded-lg">
-            {error}
-          </div>
-        )}
-
-        {/* Content Comparison */}
-        <div className="flex-1 p-6 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-6">
-            <div>
-              <h3 className="font-medium mb-3 flex justify-between">
-                Original
-                <span className="text-sm text-gray-500">
-                  {originalContent.length} chars
-                </span>
-              </h3>
-              <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg min-h-[200px] whitespace-pre-wrap">
-                {originalContent || "No content provided"}
-              </div>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-purple-500" />
+            AI Prompt Enhancement
+          </DialogTitle>
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1">
+              <Clock className="w-4 h-4" />
+              Rate Limit: {rateLimitStatus?.remaining || 0}/{rateLimitStatus?.limit || 10} remaining
             </div>
-
-            <div>
-              <h3 className="font-medium mb-3">Enhanced</h3>
-              <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg min-h-[200px]">
-                {isEnhancing ? (
-                  <div className="flex items-center justify-center h-full">
-                    <RefreshCwIcon className="w-6 h-6 animate-spin text-purple-600 mr-2" />
-                    <span>Enhancing your prompt...</span>
-                  </div>
-                ) : enhanced ? (
-                  <div className="whitespace-pre-wrap">{enhanced}</div>
-                ) : (
-                  <div className="text-gray-500 text-center">
-                    Click "Enhance" to see AI improvements
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-between items-center p-6 border-t">
-          <button
-            onClick={handleEnhance}
-            disabled={!canEnhance}
-            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
-              canEnhance
-                ? "bg-purple-600 hover:bg-purple-700 text-white"
-                : "bg-gray-300 text-gray-500 cursor-not-allowed"
-            }`}
-          >
-            <SparklesIcon className="w-4 h-4" />
-            {enhanced ? "Re-enhance" : "Enhance"}
-          </button>
-
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-            >
-              Cancel
-            </button>
-            {enhanced && (
-              <button
-                onClick={handleUseEnhanced}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Use Enhanced
-              </button>
+            {resetTime && (
+              <div>Resets at {resetTime.toLocaleTimeString()}</div>
             )}
           </div>
+        </DialogHeader>
+
+        <div className="flex-1 flex gap-4 min-h-0">
+          {/* Configuration Panel */}
+          <div className="w-80 flex-shrink-0 space-y-4 p-4 bg-muted/20 rounded-lg">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Target Platform</label>
+              <Select 
+                value={options.platform} 
+                onValueChange={(value) => setOptions(prev => ({ ...prev, platform: value }))}
+              >
+                <SelectTrigger data-testid="select-platform">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ChatGPT">ChatGPT</SelectItem>
+                  <SelectItem value="Claude">Claude</SelectItem>
+                  <SelectItem value="Gemini">Gemini</SelectItem>
+                  <SelectItem value="Perplexity">Perplexity</SelectItem>
+                  <SelectItem value="Midjourney">Midjourney</SelectItem>
+                  <SelectItem value="DALL-E">DALL-E</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">Tone</label>
+              <Select 
+                value={options.tone} 
+                onValueChange={(value) => setOptions(prev => ({ ...prev, tone: value as any }))}
+              >
+                <SelectTrigger data-testid="select-tone">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="professional">Professional</SelectItem>
+                  <SelectItem value="casual">Casual</SelectItem>
+                  <SelectItem value="academic">Academic</SelectItem>
+                  <SelectItem value="creative">Creative</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">Focus</label>
+              <Select 
+                value={options.focus} 
+                onValueChange={(value) => setOptions(prev => ({ ...prev, focus: value as any }))}
+              >
+                <SelectTrigger data-testid="select-focus">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="clarity">Clarity</SelectItem>
+                  <SelectItem value="engagement">Engagement</SelectItem>
+                  <SelectItem value="specificity">Specificity</SelectItem>
+                  <SelectItem value="structure">Structure</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {mode === 'new' && (
+              <div>
+                <label className="text-sm font-medium mb-2 block">Original Content</label>
+                <Textarea
+                  data-testid="input-original-content"
+                  value={originalContent}
+                  onChange={(e) => setOriginalContent(e.target.value)}
+                  placeholder="Enter your prompt content to enhance..."
+                  className="min-h-[120px] resize-none"
+                  maxLength={10000}
+                />
+                <div className="text-xs text-muted-foreground mt-1">
+                  {originalContent.length}/10,000 characters
+                </div>
+              </div>
+            )}
+
+            {showRateLimitWarning && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg" data-testid="alert-rate-limit">
+                <div className="flex items-center gap-2 text-destructive text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  Rate limit exceeded
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {resetTime && `Resets at ${resetTime.toLocaleTimeString()}`}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Content Comparison */}
+          <div className="flex-1 min-w-0">
+            <div className="grid grid-cols-2 gap-4 h-full">
+              {/* Original */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-medium">Original</h3>
+                  <Badge variant="outline">
+                    {mode === 'existing' ? originalContent.length : 
+                     mode === 'new' ? originalContent.length : 0} chars
+                  </Badge>
+                </div>
+                <ScrollArea className="flex-1 border rounded-lg p-4">
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                    {mode === 'existing' ? originalContent : 
+                     mode === 'new' ? originalContent : 'No content'}
+                  </div>
+                </ScrollArea>
+              </div>
+
+              {/* Enhanced */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-medium">Enhanced</h3>
+                  <div className="flex items-center gap-2">
+                    {enhancedContent && (
+                      <>
+                        <Badge variant="outline">
+                          {enhancedContent.length} chars
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleCopyEnhanced}
+                          data-testid="button-copy-enhanced"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <ScrollArea className="flex-1 border rounded-lg p-4">
+                  {isEnhancing ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                      <div className="animate-spin rounded-full w-8 h-8 border-b-2 border-primary"></div>
+                      <span className="ml-2">Enhancing with AI...</span>
+                    </div>
+                  ) : enhancedContent ? (
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                      {enhancedContent}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                      Click "Enhance" to see AI improvements
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+
+        <Separator className="my-4" />
+
+        <DialogFooter className="flex-shrink-0">
+          <div className="flex items-center gap-3">
+            {enhancedContent && (
+              <Button 
+                variant="outline" 
+                onClick={handleReset}
+                data-testid="button-reset-enhancement"
+              >
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Reset
+              </Button>
+            )}
+            <Button variant="outline" onClick={onClose} data-testid="button-cancel-enhancement">
+              Cancel
+            </Button>
+            {!enhancedContent ? (
+              <Button 
+                onClick={handleEnhance}
+                disabled={isEnhancing || rateLimitLoading || !canEnhance || (mode === 'new' && !originalContent)}
+                data-testid="button-enhance"
+              >
+                {isEnhancing ? (
+                  <div className="animate-spin rounded-full w-4 h-4 border-b-2 border-white mr-2"></div>
+                ) : (
+                  <Sparkles className="w-4 h-4 mr-2" />
+                )}
+                {isEnhancing ? 'Enhancing...' : 'Enhance'}
+              </Button>
+            ) : (
+              mode === 'new' && (
+                <Button onClick={handleUseEnhanced} data-testid="button-use-enhanced">
+                  Use Enhanced Version
+                </Button>
+              )
+            )}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
