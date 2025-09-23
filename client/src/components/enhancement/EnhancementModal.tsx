@@ -47,8 +47,8 @@ interface EnhancementModalProps {
 
 interface EnhancementOptions {
   platform?: string;
-  tone?: 'professional' | 'casual' | 'creative' | 'technical';
-  focus?: 'clarity' | 'specificity' | 'creativity' | 'conciseness';
+  tone?: 'professional' | 'casual' | 'academic' | 'creative';
+  focus?: 'clarity' | 'engagement' | 'specificity' | 'structure';
 }
 
 export function EnhancementModal({ 
@@ -235,8 +235,8 @@ export function EnhancementModal({
                 <SelectContent>
                   <SelectItem value="professional">Professional</SelectItem>
                   <SelectItem value="casual">Casual</SelectItem>
+                  <SelectItem value="academic">Academic</SelectItem>
                   <SelectItem value="creative">Creative</SelectItem>
-                  <SelectItem value="technical">Technical</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -252,9 +252,9 @@ export function EnhancementModal({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="clarity">Clarity</SelectItem>
+                  <SelectItem value="engagement">Engagement</SelectItem>
                   <SelectItem value="specificity">Specificity</SelectItem>
-                  <SelectItem value="creativity">Creativity</SelectItem>
-                  <SelectItem value="conciseness">Conciseness</SelectItem>
+                  <SelectItem value="structure">Structure</SelectItem>
                 </SelectContent>
               </Select>
             </div>
