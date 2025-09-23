@@ -1,14 +1,13 @@
 import { useState } from 'react';
-import { Menu, Filter, Download, RotateCcw, ArrowLeft, Trash2, Grid3X3, List, Edit } from 'lucide-react';
+import { Menu, Download, RotateCcw, ArrowLeft, Trash2, Grid3X3, List, Edit } from 'lucide-react';
 import { useRoute, Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/dashboard/Sidebar';
-import { SearchBar } from '@/components/dashboard/SearchBar';
 import { PromptCard } from '@/components/dashboard/PromptCard';
 import { CreatePromptModal } from '@/components/dashboard/CreatePromptModal';
 import { PromptDetailModal } from '@/components/dashboard/PromptDetailModal';
 import { TemplateCard, CreateTemplateModal, TemplateDetailModal, TemplateInstantiationModal } from '@/components/templates';
-import { AdvancedSearchFilters } from '@/components/filters/AdvancedSearchFilters';
+import { FilterDrawer } from '@/components/filters/FilterDrawer';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,8 +67,6 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [detailPrompt, setDetailPrompt] = useState<Prompt | null>(null);
   const [promptToDelete, setPromptToDelete] = useState<string | null>(null);
-  const [platformFilter, setPlatformFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
   const [advancedFilters, setAdvancedFilters] = useState<PromptFilters>({});
   const [useAdvancedFiltering, setUseAdvancedFiltering] = useState(false);
@@ -140,96 +137,31 @@ export default function Dashboard() {
     }
   }
   
-  // Apply platform and date filters
-  const applyFilters = (prompts: Prompt[]) => {
-    let filtered = [...prompts];
-
-    // Apply platform filter
-    if (platformFilter !== 'all') {
-      filtered = filtered.filter(prompt => prompt.platform === platformFilter);
-    }
-
-    // Apply date filter
-    if (dateFilter !== 'all') {
-      const now = new Date();
-      const filterDate = new Date();
-      
-      switch (dateFilter) {
-        case '7days':
-          filterDate.setDate(now.getDate() - 7);
-          break;
-        case '30days':
-          filterDate.setDate(now.getDate() - 30);
-          break;
-        default:
-          return filtered;
-      }
-      
-      filtered = filtered.filter(prompt => {
-        if (!prompt.createdAt) return false;
-        const promptDate = new Date(prompt.createdAt);
-        return promptDate >= filterDate;
-      });
-    }
-
-    return filtered;
-  };
-
-  const prompts = useAdvancedFiltering ? sourcePrompts : applyFilters(sourcePrompts);
+  const prompts = useAdvancedFiltering ? sourcePrompts : sourcePrompts;
 
   // Handle advanced filter changes
   const handleAdvancedFiltersChange = (filters: PromptFilters) => {
-    setAdvancedFilters(filters);
+    // Preserve folder scope when filtering
+    const filtersWithFolderScope = view === 'folder' && folderId 
+      ? { ...filters, folders: [folderId] }
+      : filters;
+      
+    setAdvancedFilters(filtersWithFolderScope);
     // Enable advanced filtering if any filters are applied
     const hasFilters = !!(
-      filters.search ||
-      filters.platforms?.length ||
-      filters.tags?.length ||
-      filters.folders?.length ||
-      filters.favoritesOnly ||
-      filters.recentOnly ||
-      filters.dateCreated ||
-      filters.dateModified ||
-      filters.lastUsed
+      filtersWithFolderScope.search ||
+      filtersWithFolderScope.platforms?.length ||
+      filtersWithFolderScope.tags?.length ||
+      filtersWithFolderScope.folders?.length ||
+      filtersWithFolderScope.favoritesOnly ||
+      filtersWithFolderScope.recentOnly ||
+      filtersWithFolderScope.dateCreated ||
+      filtersWithFolderScope.dateModified ||
+      filtersWithFolderScope.lastUsed
     );
     setUseAdvancedFiltering(hasFilters);
   };
 
-  // Check if any advanced filters are currently active
-  const hasActiveAdvancedFilters = !!(
-    advancedFilters.search ||
-    advancedFilters.platforms?.length ||
-    advancedFilters.tags?.length ||
-    advancedFilters.folders?.length ||
-    advancedFilters.favoritesOnly ||
-    advancedFilters.recentOnly ||
-    advancedFilters.dateCreated ||
-    advancedFilters.dateModified ||
-    advancedFilters.lastUsed
-  );
-  
-  // Platform and date filter options
-  const platformOptions = [
-    { value: 'all', label: 'All Platforms' },
-    { value: 'ChatGPT', label: 'ChatGPT' },
-    { value: 'Claude', label: 'Claude' },
-    { value: 'Perplexity', label: 'Perplexity' },
-    { value: 'Gemini', label: 'Gemini' },
-    { value: 'Mistral', label: 'Mistral' },
-    { value: 'Midjourney', label: 'Midjourney' },
-    { value: 'DALL-E', label: 'DALL-E' },
-    { value: 'Stable Diffusion', label: 'Stable Diffusion' },
-    { value: 'Leonardo AI', label: 'Leonardo AI' },
-    { value: 'Llama', label: 'Llama' },
-    { value: 'Cohere', label: 'Cohere' },
-    { value: 'Custom/Other', label: 'Custom/Other' }
-  ];
-
-  const dateOptions = [
-    { value: 'all', label: 'All Time' },
-    { value: '7days', label: 'Last 7 days' },
-    { value: '30days', label: 'Last 30 days' }
-  ];
   
   // Get current folder name if in folder view
   const currentFolder = folderId ? folders.find(f => f.id === folderId) : null;
@@ -372,10 +304,15 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Search Bar */}
-            <div className="flex-1 max-w-2xl mx-8 hidden md:block">
-              <SearchBar onSearch={setSearchQuery} />
-            </div>
+            {/* Filter Drawer - Only show for prompt views */}
+            {view !== 'templates' && (
+              <div className="flex items-center space-x-3 hidden md:flex">
+                <FilterDrawer
+                  filters={advancedFilters}
+                  onFiltersChange={handleAdvancedFiltersChange}
+                />
+              </div>
+            )}
 
             {/* Header Actions */}
             <div className="flex items-center space-x-3">
@@ -413,13 +350,6 @@ export default function Dashboard() {
 
           {/* Main Content */}
           <main className="flex-1 p-6 lg:p-8">
-            {/* Advanced Search Filters */}
-            <div className="mb-6">
-              <AdvancedSearchFilters
-                onFiltersChange={handleAdvancedFiltersChange}
-                initialFilters={advancedFilters}
-              />
-            </div>
 
             {/* Content Header */}
             <div className="flex items-center justify-between mb-6">
@@ -443,46 +373,6 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="flex items-center space-x-3">
-                {/* Legacy filter button shows when no advanced filters are active */}
-                {!hasActiveAdvancedFilters && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        data-testid="button-filter"
-                        variant="outline"
-                        className="flex items-center space-x-2 hover-bg-consistent"
-                      >
-                        <Filter className="w-4 h-4" />
-                        <span>Filter</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
-                      <DropdownMenuLabel>Platform</DropdownMenuLabel>
-                      {platformOptions.map((option) => (
-                        <DropdownMenuItem
-                          key={option.value}
-                          onClick={() => setPlatformFilter(option.value)}
-                          data-testid={`filter-platform-${option.value}`}
-                          className={cn(platformFilter === option.value && "bg-[#0cc991] text-white")}
-                        >
-                          {option.label}
-                        </DropdownMenuItem>
-                      ))}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel>Date Range</DropdownMenuLabel>
-                      {dateOptions.map((option) => (
-                        <DropdownMenuItem
-                          key={option.value}
-                          onClick={() => setDateFilter(option.value)}
-                          data-testid={`filter-date-${option.value}`}
-                          className={cn(dateFilter === option.value && "bg-[#0cc991] text-white")}
-                        >
-                          {option.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
                 
                 {/* View Mode Toggle */}
                 <div className="flex items-center border rounded-lg">
@@ -518,13 +408,16 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Search Bar (Mobile) */}
-            <div className="md:hidden mb-6">
-              <SearchBar 
-                onSearch={setSearchQuery}
-                placeholder="Search prompts..."
-              />
-            </div>
+            {/* Filter Drawer (Mobile) - Only show for prompt views */}
+            {view !== 'templates' && (
+              <div className="md:hidden mb-6 flex justify-center">
+                <FilterDrawer
+                  filters={advancedFilters}
+                  onFiltersChange={handleAdvancedFiltersChange}
+                  className="w-full max-w-sm"
+                />
+              </div>
+            )}
 
             {/* Loading State */}
             {isLoading && (
