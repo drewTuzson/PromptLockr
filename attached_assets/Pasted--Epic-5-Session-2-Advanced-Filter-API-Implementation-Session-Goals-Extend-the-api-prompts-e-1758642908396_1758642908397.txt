@@ -1,0 +1,468 @@
+# Epic 5 Session 2: Advanced Filter API Implementation
+
+## Session Goals
+Extend the `/api/prompts` endpoint with comprehensive filtering capabilities while maintaining backward compatibility with existing functionality.
+
+## Step 1: Create TypeScript Types for Filters
+
+Create a new file `shared/types/filters.ts`:
+
+```typescript
+export interface PromptFilters {
+  search?: string;
+  dateCreated?: {
+    start?: Date | string;
+    end?: Date | string;
+  };
+  dateModified?: {
+    start?: Date | string;
+    end?: Date | string;
+  };
+  lastUsed?: {
+    start?: Date | string;
+    end?: Date | string;
+  };
+  platforms?: string[];
+  tags?: string[];
+  folders?: string[];
+  favoritesOnly?: boolean;
+  recentOnly?: boolean;
+  enhanced?: boolean;
+  trashedOnly?: boolean;
+  limit?: number;
+  offset?: number;
+  sortBy?: 'createdAt' | 'updatedAt' | 'lastUsed' | 'title';
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface FilterValidationResult {
+  valid: boolean;
+  errors?: string[];
+  sanitized?: PromptFilters;
+}
+```
+
+## Step 2: Create Filter Validation Utility
+
+Create `server/utils/filterValidation.ts`:
+
+```typescript
+import { PromptFilters, FilterValidationResult } from '../../shared/types/filters.js';
+
+export function validateAndSanitizeFilters(query: any): FilterValidationResult {
+  const errors: string[] = [];
+  const sanitized: PromptFilters = {};
+
+  // Parse search string
+  if (query.search) {
+    sanitized.search = String(query.search).trim();
+  }
+
+  // Parse date ranges
+  const parseDateRange = (startStr?: string, endStr?: string) => {
+    const range: { start?: Date; end?: Date } = {};
+    
+    if (startStr) {
+      const start = new Date(startStr);
+      if (!isNaN(start.getTime())) {
+        range.start = start;
+      } else {
+        errors.push(`Invalid start date: ${startStr}`);
+      }
+    }
+    
+    if (endStr) {
+      const end = new Date(endStr);
+      if (!isNaN(end.getTime())) {
+        // Set to end of day
+        end.setHours(23, 59, 59, 999);
+        range.end = end;
+      } else {
+        errors.push(`Invalid end date: ${endStr}`);
+      }
+    }
+    
+    return Object.keys(range).length > 0 ? range : undefined;
+  };
+
+  // Date filters
+  if (query.dateCreatedStart || query.dateCreatedEnd) {
+    const range = parseDateRange(query.dateCreatedStart, query.dateCreatedEnd);
+    if (range) sanitized.dateCreated = range;
+  }
+
+  if (query.dateModifiedStart || query.dateModifiedEnd) {
+    const range = parseDateRange(query.dateModifiedStart, query.dateModifiedEnd);
+    if (range) sanitized.dateModified = range;
+  }
+
+  if (query.lastUsedStart || query.lastUsedEnd) {
+    const range = parseDateRange(query.lastUsedStart, query.lastUsedEnd);
+    if (range) sanitized.lastUsed = range;
+  }
+
+  // Array filters (comma-separated strings)
+  if (query.platforms) {
+    sanitized.platforms = String(query.platforms)
+      .split(',')
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+  }
+
+  if (query.tags) {
+    sanitized.tags = String(query.tags)
+      .split(',')
+      .map(t => t.trim())
+      .filter(t => t.length > 0);
+  }
+
+  if (query.folders) {
+    sanitized.folders = String(query.folders)
+      .split(',')
+      .map(f => f.trim())
+      .filter(f => f.length > 0);
+  }
+
+  // Boolean filters
+  if (query.favoritesOnly === 'true' || query.favoritesOnly === true) {
+    sanitized.favoritesOnly = true;
+  }
+
+  if (query.recentOnly === 'true' || query.recentOnly === true) {
+    sanitized.recentOnly = true;
+  }
+
+  if (query.enhanced === 'true' || query.enhanced === true) {
+    sanitized.enhanced = true;
+  }
+
+  if (query.trashedOnly === 'true' || query.trashedOnly === true) {
+    sanitized.trashedOnly = true;
+  }
+
+  // Pagination
+  if (query.limit) {
+    const limit = parseInt(query.limit);
+    if (!isNaN(limit) && limit > 0 && limit <= 100) {
+      sanitized.limit = limit;
+    } else {
+      errors.push('Limit must be between 1 and 100');
+    }
+  }
+
+  if (query.offset) {
+    const offset = parseInt(query.offset);
+    if (!isNaN(offset) && offset >= 0) {
+      sanitized.offset = offset;
+    } else {
+      errors.push('Offset must be non-negative');
+    }
+  }
+
+  // Sorting
+  const validSortFields = ['createdAt', 'updatedAt', 'lastUsed', 'title'];
+  if (query.sortBy && validSortFields.includes(query.sortBy)) {
+    sanitized.sortBy = query.sortBy as any;
+  }
+
+  if (query.sortOrder === 'asc' || query.sortOrder === 'desc') {
+    sanitized.sortOrder = query.sortOrder;
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors: errors.length > 0 ? errors : undefined,
+    sanitized
+  };
+}
+```
+
+## Step 3: Create Filter Query Builder
+
+Create `server/utils/filterQueryBuilder.ts`:
+
+```typescript
+import { and, eq, like, gte, lte, inArray, isNull, desc, asc, sql } from 'drizzle-orm';
+import { prompts } from '../../lib/db/schema.js';
+import { PromptFilters } from '../../shared/types/filters.js';
+
+export function buildFilterConditions(filters: PromptFilters, userId: string) {
+  const conditions = [eq(prompts.userId, userId)];
+
+  // Text search
+  if (filters.search) {
+    const searchTerm = `%${filters.search}%`;
+    conditions.push(
+      sql`(${prompts.title} LIKE ${searchTerm} OR ${prompts.content} LIKE ${searchTerm} OR ${prompts.tags} LIKE ${searchTerm})`
+    );
+  }
+
+  // Date filters
+  if (filters.dateCreated?.start) {
+    conditions.push(gte(prompts.createdAt, filters.dateCreated.start));
+  }
+  if (filters.dateCreated?.end) {
+    conditions.push(lte(prompts.createdAt, filters.dateCreated.end));
+  }
+
+  if (filters.dateModified?.start) {
+    conditions.push(gte(prompts.updatedAt, filters.dateModified.start));
+  }
+  if (filters.dateModified?.end) {
+    conditions.push(lte(prompts.updatedAt, filters.dateModified.end));
+  }
+
+  if (filters.lastUsed?.start) {
+    conditions.push(gte(prompts.lastUsed, filters.lastUsed.start));
+  }
+  if (filters.lastUsed?.end) {
+    conditions.push(lte(prompts.lastUsed, filters.lastUsed.end));
+  }
+
+  // Platform filter
+  if (filters.platforms && filters.platforms.length > 0) {
+    conditions.push(inArray(prompts.platform, filters.platforms));
+  }
+
+  // Folder filter
+  if (filters.folders && filters.folders.length > 0) {
+    conditions.push(inArray(prompts.folderId, filters.folders));
+  }
+
+  // Tags filter (more complex since tags are stored as JSON string)
+  if (filters.tags && filters.tags.length > 0) {
+    const tagConditions = filters.tags.map(tag => 
+      sql`${prompts.tags} LIKE ${'%"' + tag + '"%'}`
+    );
+    conditions.push(sql`(${sql.join(tagConditions, sql` OR `)})`);
+  }
+
+  // Boolean filters
+  if (filters.favoritesOnly) {
+    conditions.push(eq(prompts.isFavorite, true));
+  }
+
+  if (filters.recentOnly) {
+    // Last 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    conditions.push(gte(prompts.lastUsed, sevenDaysAgo));
+  }
+
+  if (filters.enhanced) {
+    conditions.push(eq(prompts.isEnhanced, true));
+  }
+
+  // Trash filter
+  if (filters.trashedOnly) {
+    conditions.push(sql`${prompts.trashedAt} IS NOT NULL`);
+  } else {
+    conditions.push(isNull(prompts.trashedAt));
+  }
+
+  return and(...conditions);
+}
+
+export function buildOrderBy(filters: PromptFilters) {
+  const field = filters.sortBy || 'updatedAt';
+  const order = filters.sortOrder || 'desc';
+  
+  const fieldMap = {
+    createdAt: prompts.createdAt,
+    updatedAt: prompts.updatedAt,
+    lastUsed: prompts.lastUsed,
+    title: prompts.title
+  };
+
+  const column = fieldMap[field as keyof typeof fieldMap];
+  return order === 'desc' ? desc(column) : asc(column);
+}
+```
+
+## Step 4: Update the Prompts API Route
+
+Update your existing prompts route handler in `server/routes.ts` or wherever your routes are defined:
+
+```typescript
+import { db } from '../lib/db/index.js';
+import { prompts } from '../lib/db/schema.js';
+import { validateAndSanitizeFilters } from './utils/filterValidation.js';
+import { buildFilterConditions, buildOrderBy } from './utils/filterQueryBuilder.js';
+
+// GET /api/prompts - with advanced filtering
+app.get('/api/prompts', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Validate and sanitize filters
+    const validation = validateAndSanitizeFilters(req.query);
+    
+    if (!validation.valid) {
+      return res.status(400).json({ 
+        error: 'Invalid filter parameters', 
+        details: validation.errors 
+      });
+    }
+
+    const filters = validation.sanitized!;
+    
+    // Build query
+    const conditions = buildFilterConditions(filters, userId);
+    const orderBy = buildOrderBy(filters);
+    
+    // Set defaults for pagination
+    const limit = filters.limit || 50;
+    const offset = filters.offset || 0;
+    
+    // Execute query
+    const query = db
+      .select()
+      .from(prompts)
+      .where(conditions)
+      .orderBy(orderBy)
+      .limit(limit)
+      .offset(offset);
+
+    const results = await query;
+
+    // Get total count for pagination
+    const countQuery = db
+      .select({ count: sql`count(*)` })
+      .from(prompts)
+      .where(conditions);
+    
+    const [{ count }] = await countQuery;
+
+    res.json({
+      prompts: results,
+      pagination: {
+        total: Number(count),
+        limit,
+        offset,
+        hasMore: offset + limit < Number(count)
+      },
+      filters: filters
+    });
+
+  } catch (error) {
+    console.error('Error fetching prompts with filters:', error);
+    res.status(500).json({ error: 'Failed to fetch prompts' });
+  }
+});
+```
+
+## Step 5: Add Auto-Update for `updatedAt` Field
+
+Create a middleware or update your existing prompt update endpoints:
+
+```typescript
+// Middleware to set updatedAt
+function setUpdatedAt(req: Request, res: Response, next: NextFunction) {
+  if (req.body && (req.method === 'PUT' || req.method === 'PATCH')) {
+    req.body.updatedAt = new Date();
+  }
+  next();
+}
+
+// Apply to prompt update routes
+app.put('/api/prompts/:id', authenticateToken, setUpdatedAt, async (req, res) => {
+  // Your existing update logic
+  const promptId = req.params.id;
+  const userId = req.user.id;
+  const updates = req.body;
+  
+  // Always include updatedAt
+  updates.updatedAt = new Date();
+  
+  const result = await db
+    .update(prompts)
+    .set(updates)
+    .where(and(
+      eq(prompts.id, promptId),
+      eq(prompts.userId, userId)
+    ))
+    .returning();
+    
+  res.json(result[0]);
+});
+```
+
+## Step 6: Create Test API Calls
+
+Test your new filtering API with these example requests:
+
+```bash
+# Basic search
+GET /api/prompts?search=chatgpt
+
+# Date range filtering
+GET /api/prompts?dateCreatedStart=2025-01-01&dateCreatedEnd=2025-01-31
+
+# Multiple filters
+GET /api/prompts?platforms=ChatGPT,Claude&favoritesOnly=true&sortBy=lastUsed
+
+# Tags and folders
+GET /api/prompts?tags=productivity,work&folders=folder-id-1,folder-id-2
+
+# Recent items only
+GET /api/prompts?recentOnly=true&sortBy=lastUsed&sortOrder=desc
+
+# Pagination
+GET /api/prompts?limit=20&offset=40
+
+# Complex query
+GET /api/prompts?search=API&platforms=ChatGPT&dateModifiedStart=2025-01-01&favoritesOnly=true&limit=10
+```
+
+## Step 7: Frontend Integration Hook (Optional Preview)
+
+Create a React hook to use the new filtering:
+
+```typescript
+// client/src/hooks/useFilteredPrompts.ts
+import { useQuery } from '@tanstack/react-query';
+import { PromptFilters } from '../../../shared/types/filters';
+
+export function useFilteredPrompts(filters: PromptFilters) {
+  const queryParams = new URLSearchParams();
+  
+  // Build query string from filters
+  if (filters.search) queryParams.set('search', filters.search);
+  if (filters.platforms?.length) queryParams.set('platforms', filters.platforms.join(','));
+  if (filters.favoritesOnly) queryParams.set('favoritesOnly', 'true');
+  // ... add other filters
+
+  return useQuery({
+    queryKey: ['prompts', filters],
+    queryFn: async () => {
+      const response = await fetch(`/api/prompts?${queryParams}`);
+      if (!response.ok) throw new Error('Failed to fetch prompts');
+      return response.json();
+    },
+    staleTime: 30000, // 30 seconds
+  });
+}
+```
+
+## Verification Checklist
+
+- [ ] Filters properly validated and sanitized
+- [ ] Complex queries execute without errors
+- [ ] Pagination works correctly
+- [ ] Sorting functions properly
+- [ ] Backward compatibility maintained (old requests still work)
+- [ ] `updatedAt` field properly updated on modifications
+- [ ] Performance acceptable with large datasets
+- [ ] Error handling returns helpful messages
+
+## Next Steps
+
+After completing the API implementation:
+1. Test all filter combinations thoroughly
+2. Monitor query performance with different filter combinations
+3. Consider adding query result caching for common filters
+4. Prepare for Session 3: Building the Filter UI Components
+
+## Session 2 Complete!
+
+Your Advanced Filter API is now ready to handle complex, multi-criteria searches with proper validation, pagination, and sorting. The foundation is set for building the frontend filtering interface in the next session.
