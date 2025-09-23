@@ -29,14 +29,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { X } from 'lucide-react';
 import { useCreatePrompt, useUpdatePrompt, usePrompts } from '@/hooks/usePrompts';
-import { useFolders } from '@/hooks/useFolders';
+import { useFolders, useCreateFolder } from '@/hooks/useFolders';
 import { Prompt } from '@shared/schema';
 
 import { createPromptSchema } from '@shared/schema';
 
 const promptSchema = createPromptSchema.extend({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
-  content: z.string().min(1, 'Content is required').max(10000, 'Content too long'),
+  content: z.string().min(1, 'Content is required').max(100000, 'Content too long'),
 });
 
 type PromptFormData = z.infer<typeof promptSchema>;
@@ -52,9 +52,12 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
   const [tags, setTags] = useState<string[]>(editingPrompt?.tags || []);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [customPlatform, setCustomPlatform] = useState<string>('');
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
   
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
+  const createFolder = useCreateFolder();
   const { data: folders = [] } = useFolders();
   const { data: allPrompts = [] } = usePrompts();
   
@@ -97,6 +100,8 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
       });
       setTags([]);
       setCustomPlatform('');
+      setIsCreatingFolder(false);
+      setNewFolderName('');
     }
   }, [editingPrompt, form]);
 
@@ -150,6 +155,39 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
       setTags([...tags, tagInput.trim()]);
       setTagInput('');
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      return;
+    }
+
+    try {
+      const newFolder = await createFolder.mutateAsync({
+        name: newFolderName.trim(),
+      });
+      
+      // Select the newly created folder
+      form.setValue('folderId', newFolder.id);
+      
+      // Reset folder creation state
+      setIsCreatingFolder(false);
+      setNewFolderName('');
+    } catch (error) {
+      console.error('Failed to create folder:', error);
+    }
+  };
+
+  const handleFolderSelectChange = (value: string) => {
+    if (value === 'create-new') {
+      setIsCreatingFolder(true);
+      setNewFolderName('');
+      form.setValue('folderId', null);
+    } else {
+      setIsCreatingFolder(false);
+      setNewFolderName('');
+      form.setValue('folderId', value === 'none' ? null : value);
     }
   };
 
@@ -296,8 +334,8 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                   <FormControl>
                     <Select
                       data-testid="select-folder"
-                      value={field.value || "none"}
-                      onValueChange={(value) => field.onChange(value === "none" ? null : value)}
+                      value={isCreatingFolder ? "create-new" : (field.value || "none")}
+                      onValueChange={handleFolderSelectChange}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select a folder" />
@@ -309,6 +347,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                             {folder.name}
                           </SelectItem>
                         ))}
+                        <SelectItem value="create-new">+ Create New Folder</SelectItem>
                       </SelectContent>
                     </Select>
                   </FormControl>
@@ -316,6 +355,58 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                 </FormItem>
               )}
             />
+
+            {/* Create New Folder Input - conditionally shown */}
+            {isCreatingFolder && (
+              <FormItem>
+                <FormLabel>Enter folder name</FormLabel>
+                <FormControl>
+                  <div className="flex gap-2">
+                    <Input
+                      data-testid="input-new-folder-name"
+                      placeholder="e.g., Work Prompts, AI Agents, etc."
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateFolder();
+                        }
+                        if (e.key === 'Escape') {
+                          setIsCreatingFolder(false);
+                          setNewFolderName('');
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <Button
+                      type="button"
+                      data-testid="button-create-folder"
+                      onClick={handleCreateFolder}
+                      disabled={!newFolderName.trim() || createFolder.isPending}
+                      size="sm"
+                    >
+                      {createFolder.isPending ? 'Creating...' : 'Create'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      data-testid="button-cancel-folder"
+                      onClick={() => {
+                        setIsCreatingFolder(false);
+                        setNewFolderName('');
+                      }}
+                      size="sm"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </FormControl>
+                {!newFolderName.trim() && (
+                  <FormMessage>Folder name is required</FormMessage>
+                )}
+              </FormItem>
+            )}
 
             <FormField
               control={form.control}
