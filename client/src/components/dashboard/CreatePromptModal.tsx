@@ -27,10 +27,11 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { X } from 'lucide-react';
+import { X, Sparkles } from 'lucide-react';
 import { useCreatePrompt, useUpdatePrompt, usePrompts } from '@/hooks/usePrompts';
 import { useFolders, useCreateFolder } from '@/hooks/useFolders';
 import { Prompt } from '@shared/schema';
+import { EnhancementModal } from '@/components/enhancement/EnhancementModal';
 
 import { createPromptSchema } from '@shared/schema';
 
@@ -54,6 +55,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
   const [customPlatform, setCustomPlatform] = useState<string>('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [isEnhancementModalOpen, setIsEnhancementModalOpen] = useState(false);
   
   const createPrompt = useCreatePrompt();
   const updatePrompt = useUpdatePrompt();
@@ -422,8 +424,22 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                       {...field}
                     />
                   </FormControl>
-                  <div className="text-xs text-muted-foreground text-right">
-                    {field.value.length} characters
+                  <div className="flex items-center justify-between">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid="button-enhance"
+                      onClick={() => setIsEnhancementModalOpen(true)}
+                      disabled={!field.value.trim()}
+                      className="flex items-center gap-2"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Enhance with AI
+                    </Button>
+                    <div className="text-xs text-muted-foreground">
+                      {field.value.length} characters
+                    </div>
                   </div>
                   <FormMessage />
                 </FormItem>
@@ -509,6 +525,18 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
           </form>
         </Form>
       </DialogContent>
+
+      <EnhancementModal
+        isOpen={isEnhancementModalOpen}
+        onClose={() => setIsEnhancementModalOpen(false)}
+        promptId={editingPrompt?.id}
+        initialContent={form.watch('content') || ''}
+        mode={editingPrompt ? 'existing' : 'new'}
+        onEnhanced={(enhanced: string) => {
+          form.setValue('content', enhanced);
+          setIsEnhancementModalOpen(false);
+        }}
+      />
     </Dialog>
   );
 }

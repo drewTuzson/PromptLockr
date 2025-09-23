@@ -13,12 +13,15 @@ import {
   Heart,
   Calendar,
   User,
-  Folder
+  Folder,
+  Sparkles
 } from 'lucide-react';
 import { Prompt } from '@shared/schema';
 import { useUpdatePrompt, useDeletePrompt } from '@/hooks/usePrompts';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useState } from 'react';
+import { EnhancementModal } from '@/components/enhancement/EnhancementModal';
 
 interface PromptDetailModalProps {
   prompt: Prompt | null;
@@ -43,6 +46,7 @@ const platformClasses: Record<string, string> = {
 };
 
 export function PromptDetailModal({ prompt, isOpen, onClose, onEdit }: PromptDetailModalProps) {
+  const [isEnhancementModalOpen, setIsEnhancementModalOpen] = useState(false);
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
   const { toast } = useToast();
@@ -168,6 +172,16 @@ export function PromptDetailModal({ prompt, isOpen, onClose, onEdit }: PromptDet
                 <Heart className={cn("w-4 h-4", prompt.isFavorite ? "fill-current" : "")} />
                 {prompt.isFavorite ? "Unfavorite" : "Favorite"}
               </Button>
+              
+              <Button
+                data-testid={`button-enhance-prompt-${prompt.id}`}
+                variant="outline"
+                onClick={() => setIsEnhancementModalOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Enhance with AI
+              </Button>
             </div>
             
             <div className="flex items-center gap-2">
@@ -195,6 +209,14 @@ export function PromptDetailModal({ prompt, isOpen, onClose, onEdit }: PromptDet
           </div>
         </div>
       </DialogContent>
+
+      <EnhancementModal
+        isOpen={isEnhancementModalOpen}
+        onClose={() => setIsEnhancementModalOpen(false)}
+        promptId={prompt.id}
+        initialContent={prompt.content}
+        mode="existing"
+      />
     </Dialog>
   );
 }
