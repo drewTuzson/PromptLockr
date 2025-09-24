@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { 
   Plus, 
@@ -7,23 +6,15 @@ import {
   Heart, 
   Trash2, 
   Folder, 
-  ChevronRight,
   Sun,
   Moon,
   Settings,
   LogOut,
-  Check,
-  X,
   File
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/components/ui/theme-provider';
-import { usePrompts, useFavoritePrompts, useTrashedPrompts } from '@/hooks/usePrompts';
-import { useFolders, useCreateFolder } from '@/hooks/useFolders';
-import { FolderItem } from './FolderItem';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -36,40 +27,6 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
   const [location] = useLocation();
   const { logout, user } = useAuth();
   const { theme, setTheme } = useTheme();
-  
-  const { data: allPrompts = [] } = usePrompts();
-  const { data: favoritePrompts = [] } = useFavoritePrompts();
-  const { data: trashedPrompts = [] } = useTrashedPrompts();
-  const { data: folders = [] } = useFolders();
-  const createFolder = useCreateFolder();
-  
-  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-
-  const handleCreateFolder = async () => {
-    if (!newFolderName.trim()) return;
-    
-    try {
-      await createFolder.mutateAsync({ name: newFolderName.trim() });
-      setNewFolderName('');
-      setIsCreatingFolder(false);
-    } catch (error) {
-      // Error is handled by the mutation hook
-    }
-  };
-
-  const handleCancelCreate = () => {
-    setNewFolderName('');
-    setIsCreatingFolder(false);
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleCreateFolder();
-    } else if (e.key === 'Escape') {
-      handleCancelCreate();
-    }
-  };
 
 
   const toggleTheme = () => {
@@ -78,8 +35,8 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
 
   return (
     <aside className={cn("w-64 bg-card border-r border-border h-[calc(100vh-73px)] lg:sticky lg:top-[73px] flex flex-col sidebar-transition", className)}>
-      {/* Top Section - Fixed */}
-      <div className="flex-shrink-0 p-6 space-y-6">
+      {/* Top Section - Navigation */}
+      <div className="flex-1 p-6 space-y-6">
         {/* Quick Actions */}
         <div className="space-y-3">
           <Button
@@ -137,19 +94,18 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             </div>
           </Link>
           
-          
-          <Link href="/dashboard/trash" className="block">
+          <Link href="/dashboard/folders" className="block">
             <div
-              data-testid="link-trash"
+              data-testid="link-folders"
               className={cn(
                 "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
-                location === '/dashboard/trash'
+                location === '/dashboard/folders'
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground"
               )}
             >
-              <Trash2 className="w-4 h-4" />
-              <span>Trash</span>
+              <Folder className="w-4 h-4" />
+              <span>Folders</span>
             </div>
           </Link>
           
@@ -167,78 +123,24 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
               <span>Templates</span>
             </div>
           </Link>
+          
+          <Link href="/dashboard/trash" className="block">
+            <div
+              data-testid="link-trash"
+              className={cn(
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
+                location === '/dashboard/trash'
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground"
+              )}
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Trash</span>
+            </div>
+          </Link>
         </nav>
       </div>
 
-      {/* Middle Section - Scrollable Folders */}
-      <div className="flex-1 overflow-hidden px-6">
-        <div className="space-y-2 h-full">
-          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            Folders
-          </div>
-          <div className="space-y-1 overflow-y-auto h-full">
-            {folders.map((folder) => {
-              // Count prompts in this folder
-              const promptCount = allPrompts.filter(p => p.folderId === folder.id).length;
-              return (
-                <FolderItem
-                  key={folder.id}
-                  folder={folder}
-                  promptCount={promptCount}
-                />
-              );
-            })}
-            {isCreatingFolder ? (
-              <div className="flex items-center space-x-2 px-3 py-2">
-                <Folder className="w-4 h-4 text-muted-foreground" />
-                <Input
-                  data-testid="input-new-folder-name"
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  onKeyDown={handleKeyPress}
-                  placeholder="Folder name"
-                  className="h-6 text-xs border-none bg-transparent p-0 focus-visible:ring-0"
-                  autoFocus
-                />
-                <Button
-                  data-testid="button-save-folder"
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleCreateFolder}
-                  disabled={createFolder.isPending || !newFolderName.trim()}
-                  className="h-6 w-6 p-1"
-                >
-                  <Check className="w-3 h-3" />
-                </Button>
-                <Button
-                  data-testid="button-cancel-folder"
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleCancelCreate}
-                  className="h-6 w-6 p-1"
-                >
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
-            ) : (
-              <Button
-                data-testid="button-new-folder"
-                variant="ghost"
-                className="w-full justify-start space-x-2 px-3 py-2 h-auto text-xs text-muted-foreground hover-bg-consistent"
-                onClick={() => setIsCreatingFolder(true)}
-              >
-                <Plus className="w-4 h-4" />
-                <span>New Folder</span>
-              </Button>
-            )}
-            {folders.length === 0 && (
-              <div className="text-xs text-muted-foreground px-3 py-2">
-                No folders yet
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
 
       {/* Bottom Section - Fixed */}
       <div className="flex-shrink-0 p-6 space-y-6">
