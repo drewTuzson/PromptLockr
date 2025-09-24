@@ -8,6 +8,7 @@ import { CreatePromptModal } from '@/components/dashboard/CreatePromptModal';
 import { PromptDetailModal } from '@/components/dashboard/PromptDetailModal';
 import { TemplateCard, CreateTemplateModal, TemplateDetailModal, TemplateInstantiationModal } from '@/components/templates';
 import { FilterDrawer } from '@/components/filters/FilterDrawer';
+import { SearchBar } from '@/components/dashboard/SearchBar';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -160,6 +161,11 @@ export default function Dashboard() {
       filtersWithFolderScope.lastUsed
     );
     setUseAdvancedFiltering(hasFilters);
+    
+    // Sync search query with filter search
+    if (filtersWithFolderScope.search !== undefined) {
+      setSearchQuery(filtersWithFolderScope.search || '');
+    }
   };
 
   
@@ -304,12 +310,13 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Filter Drawer - Only show for prompt views */}
+            {/* Search Bar - Only show for prompt views */}
             {view !== 'templates' && (
-              <div className="flex items-center space-x-3 hidden md:flex">
-                <FilterDrawer
-                  filters={advancedFilters}
-                  onFiltersChange={handleAdvancedFiltersChange}
+              <div className="flex items-center space-x-3 flex-1 max-w-md mx-8">
+                <SearchBar
+                  onSearch={setSearchQuery}
+                  placeholder="Search prompts, tags, or content..."
+                  className="w-full"
                 />
               </div>
             )}
@@ -373,6 +380,14 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="flex items-center space-x-3">
+                
+                {/* Filter Button - Only show for prompt views */}
+                {view !== 'templates' && (
+                  <FilterDrawer
+                    filters={advancedFilters}
+                    onFiltersChange={handleAdvancedFiltersChange}
+                  />
+                )}
                 
                 {/* View Mode Toggle */}
                 <div className="flex items-center border rounded-lg">
