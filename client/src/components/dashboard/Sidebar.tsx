@@ -77,7 +77,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
   };
 
   return (
-    <aside className={cn("w-64 bg-card border-r border-border h-[calc(100vh-73px)] flex flex-col sidebar-transition", className)}>
+    <aside className={cn("w-64 bg-card border-r border-border h-[calc(100vh-73px)] lg:sticky lg:top-[73px] flex flex-col sidebar-transition", className)}>
       {/* Top Section - Fixed */}
       <div className="flex-shrink-0 p-6 space-y-6">
         {/* Quick Actions */}
