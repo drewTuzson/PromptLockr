@@ -10,7 +10,7 @@ import { db as drizzleDB } from "./db.js";
 import { prompts } from "@shared/schema";
 import { validateAndSanitizeFilters } from "./utils/filterValidation.js";
 import { buildFilterConditions, buildOrderBy } from "./utils/filterQueryBuilder.js";
-import { sql, eq, and } from "drizzle-orm";
+import { sql, eq, and, or, desc, ilike, isNotNull } from "drizzle-orm";
 import { claudeService } from "./services/claudeService.js";
 import { templateEngine } from "./services/templateEngine.js";
 
@@ -217,16 +217,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Backward compatibility: Use existing storage interface for basic queries
+      // Use PostgreSQL for basic queries to maintain consistency
       const query = req.query.q as string;
-      let promptsResult;
+      
+      // Build basic query conditions
+      let conditions = eq(prompts.userId, userId);
+      
+      // Add search functionality if query provided
       if (query) {
-        promptsResult = await storage.searchPrompts(userId, query);
-      } else {
-        promptsResult = await storage.getUserPrompts(userId);
+        const searchTerm = `%${query}%`;
+        conditions = and(
+          conditions,
+          or(
+            ilike(prompts.title, searchTerm),
+            ilike(prompts.content, searchTerm),
+            ilike(prompts.tags, searchTerm)
+          )
+        )!;
       }
       
-      res.json(promptsResult);
+      // Execute query with default ordering
+      const results = await drizzleDB
+        .select()
+        .from(prompts)
+        .where(conditions)
+        .orderBy(desc(prompts.updatedAt))
+        .limit(50);
+      
+      res.json(results);
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
         return res.status(401).json({ message: error.message });
@@ -267,8 +285,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/prompts/favorites", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      const prompts = await storage.getFavoritePrompts(userId);
-      res.json(prompts);
+      
+      // Use PostgreSQL for consistency
+      const favoritePrompts = await drizzleDB
+        .select()
+        .from(prompts)
+        .where(
+          and(
+            eq(prompts.userId, userId),
+            eq(prompts.isFavorite, true)
+          )!
+        )
+        .orderBy(desc(prompts.updatedAt));
+      
+      res.json(favoritePrompts);
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
         return res.status(401).json({ message: error.message });
@@ -281,8 +311,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/prompts/recent", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      const prompts = await storage.getRecentPrompts(userId);
-      res.json(prompts);
+      
+      // Use PostgreSQL for consistency - order by lastAccessed or updatedAt
+      const recentPrompts = await drizzleDB
+        .select()
+        .from(prompts)
+        .where(eq(prompts.userId, userId))
+        .orderBy(desc(prompts.lastAccessed), desc(prompts.updatedAt))
+        .limit(10);
+      
+      res.json(recentPrompts);
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
         return res.status(401).json({ message: error.message });
@@ -296,9 +334,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/prompts/trash", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      console.log('Fetching trashed prompts for user:', userId);
-      const trashedPrompts = await storage.getTrashedPrompts(userId);
-      console.log('Found trashed prompts:', trashedPrompts.length);
+      
+      // Use PostgreSQL for consistency - find prompts with trashedAt set
+      const trashedPrompts = await drizzleDB
+        .select()
+        .from(prompts)
+        .where(
+          and(
+            eq(prompts.userId, userId),
+            isNotNull(prompts.trashedAt)
+          )!
+        )
+        .orderBy(desc(prompts.trashedAt));
+      
       res.json(trashedPrompts);
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
@@ -382,9 +430,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/prompts/:id", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      const existing = await storage.getPrompt(req.params.id);
       
-      if (!existing || existing.userId !== userId) {
+      // Use PostgreSQL for consistency
+      const [existing] = await drizzleDB
+        .select()
+        .from(prompts)
+        .where(
+          and(
+            eq(prompts.id, req.params.id),
+            eq(prompts.userId, userId)
+          )!
+        )
+        .limit(1);
+      
+      if (!existing) {
         return res.status(404).json({ message: "Prompt not found" });
       }
       
@@ -395,7 +454,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Always update the updatedAt timestamp for modifications
       updates.updatedAt = new Date();
       
-      const updated = await storage.updatePrompt(req.params.id, updates);
+      const [updated] = await drizzleDB
+        .update(prompts)
+        .set(updates)
+        .where(
+          and(
+            eq(prompts.id, req.params.id),
+            eq(prompts.userId, userId)
+          )!
+        )
+        .returning();
+      
       res.json(updated);
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
