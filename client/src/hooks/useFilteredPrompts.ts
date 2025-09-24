@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { AuthService } from '@/lib/auth';
 import { PromptFilters } from '../types/filters';
 
 interface FilteredPromptsResponse {
@@ -87,7 +88,7 @@ export function useFilteredPrompts(filters: PromptFilters) {
       
       const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          ...AuthService.getAuthHeaders(),
           'Content-Type': 'application/json',
         },
       });
