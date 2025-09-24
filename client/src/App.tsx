@@ -9,6 +9,7 @@ import Login from "@/pages/login";
 import Signup from "@/pages/signup";
 import Dashboard from "@/pages/dashboard";
 import TemplatesPage from "@/pages/TemplatesPage";
+import FoldersPage from "@/pages/FoldersPage";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 import TestAuth from "@/pages/test-auth";
@@ -20,6 +21,7 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/dashboard/templates" component={TemplatesPage} />
+      <Route path="/dashboard/folders" component={FoldersPage} />
       <Route path="/dashboard/folder/:folderId" component={Dashboard} />
       <Route path="/dashboard/:view" component={Dashboard} />
       <Route path="/dashboard" component={Dashboard} />
