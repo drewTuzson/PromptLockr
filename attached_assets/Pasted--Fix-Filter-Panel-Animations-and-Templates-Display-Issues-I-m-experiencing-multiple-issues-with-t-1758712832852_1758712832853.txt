@@ -1,0 +1,445 @@
+## Fix Filter Panel Animations and Templates Display Issues
+
+I'm experiencing multiple issues with the current build that need to be addressed:
+
+1. **Filter panel lacks animations** - The off-canvas filter panel needs smooth slide animations
+2. **Templates page shows wrong content** - It displays the prompts empty state before showing templates
+3. **Created templates not visible** - Templates are being created (toast confirms) but aren't displayed anywhere
+
+**Technical Context:**
+- Frontend: React 18.3.1 + TypeScript + Vite
+- UI Components: Radix UI + Tailwind CSS
+- Animation Library: Framer Motion (already installed)
+- State Management: React Query
+- Database: PostgreSQL with Drizzle ORM
+
+## Issue 1: Add Slide Animations to Filter Panel
+
+The filter panel needs smooth slide animations. Since Framer Motion is already installed, implement slide-in-left and slide-out-right animations:
+
+### Update the Filter Sheet Component with Framer Motion
+
+```tsx
+import { motion, AnimatePresence } from 'framer-motion';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+
+// Custom animated sheet content wrapper
+const AnimatedSheetContent = ({ isOpen, onClose, children }) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.5 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={onClose}
+          />
+          
+          {/* Panel */}
+          <motion.div
+            initial={{ x: '-100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '-100%' }}
+            transition={{
+              type: 'spring',
+              damping: 25,
+              stiffness: 300
+            }}
+            className="fixed left-0 top-0 z-50 h-full w-80 bg-background border-r shadow-xl"
+          >
+            {children}
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// Update FilterSheet component
+const FilterSheet = ({ open, onOpenChange, filters, onFiltersChange }) => {
+  return (
+    <AnimatedSheetContent isOpen={open} onClose={() => onOpenChange(false)}>
+      <div className="p-6 h-full overflow-y-auto">
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold">Filter Prompts</h2>
+          <p className="text-sm text-muted-foreground">
+            Refine your prompt search with filters
+          </p>
+        </div>
+        
+        {/* Filter controls content */}
+        <div className="space-y-6">
+          {/* ... existing filter controls ... */}
+        </div>
+      </div>
+    </AnimatedSheetContent>
+  );
+};
+```
+
+### Alternative: If using Radix UI Sheet, enhance it with CSS transitions
+
+```css
+/* Add to your global CSS or component styles */
+[data-state="open"][data-side="left"] {
+  animation: slideInLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-state="closed"][data-side="left"] {
+  animation: slideOutLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutLeft {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+```
+
+## Issue 2: Fix Templates Page Display
+
+The templates page is showing the prompts empty state first. This needs to be fixed by ensuring proper routing and component rendering:
+
+### Check and Fix the Templates Route Component
+
+```tsx
+// In the Templates page component (likely client/src/pages/Templates.tsx or similar)
+import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+const TemplatesPage = () => {
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Fetch templates from the API
+  const { data: templates, isLoading: templatesLoading, error } = useQuery({
+    queryKey: ['templates'],
+    queryFn: async () => {
+      const response = await fetch('/api/templates', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch templates');
+      return response.json();
+    }
+  });
+
+  // Ensure we're not showing prompts content
+  if (templatesLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-6">
+      {/* Templates Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Templates</h1>
+          <p className="text-gray-500">Reusable prompt templates with variables</p>
+        </div>
+        
+        <Button onClick={() => openCreateTemplateModal()}>
+          <Plus className="w-4 h-4 mr-2" />
+          Create Template
+        </Button>
+      </div>
+
+      {/* Templates Content */}
+      {templates && templates.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {templates.map((template) => (
+            <TemplateCard key={template.id} template={template} />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center h-64">
+          <div className="text-6xl mb-4">📄</div>
+          <h2 className="text-xl font-semibold mb-2">No templates found</h2>
+          <p className="text-gray-500 mb-4">Get started by creating your first template.</p>
+          <Button onClick={() => openCreateTemplateModal()}>
+            <Plus className="w-4 h-4 mr-2" />
+            Create Your First Template
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+### Fix Router Configuration
+
+```tsx
+// In App.tsx or main router file
+import { Route, Switch } from 'wouter';
+import PromptsPage from './pages/Prompts';
+import TemplatesPage from './pages/Templates';
+
+function App() {
+  return (
+    <Switch>
+      <Route path="/" component={PromptsPage} />
+      <Route path="/prompts" component={PromptsPage} />
+      <Route path="/templates" component={TemplatesPage} />
+      {/* Other routes */}
+    </Switch>
+  );
+}
+```
+
+## Issue 3: Fix Templates Not Displaying After Creation
+
+Templates are being created but not shown. This requires fixing both the backend API and frontend display:
+
+### 1. Verify Backend Templates API
+
+```typescript
+// In server/routes.ts - Ensure templates endpoints exist and work correctly
+
+// GET all templates for user
+app.get('/api/templates', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const templates = await db.select()
+      .from(templates)
+      .where(eq(templates.userId, userId))
+      .orderBy(desc(templates.createdAt));
+    
+    res.json(templates);
+  } catch (error) {
+    console.error('Error fetching templates:', error);
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
+
+// POST create new template
+app.post('/api/templates', authenticateToken, async (req, res) => {
+  try {
+    const { title, content, variables, category, description } = req.body;
+    const userId = req.user.id;
+    
+    const newTemplate = await db.insert(templates).values({
+      id: crypto.randomUUID(),
+      userId,
+      title,
+      content,
+      variables: variables || [],
+      category,
+      description,
+      createdAt: new Date()
+    }).returning();
+    
+    res.status(201).json(newTemplate[0]);
+  } catch (error) {
+    console.error('Error creating template:', error);
+    res.status(500).json({ error: 'Failed to create template' });
+  }
+});
+```
+
+### 2. Fix Frontend Template Creation and Display
+
+```tsx
+// In the Create Template Modal/Component
+const CreateTemplateModal = ({ isOpen, onClose }) => {
+  const [formData, setFormData] = useState({
+    title: '',
+    content: '',
+    description: '',
+    category: '',
+    variables: []
+  });
+  
+  const queryClient = useQueryClient();
+  
+  const createTemplate = async () => {
+    try {
+      const response = await fetch('/api/templates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(formData)
+      });
+      
+      if (!response.ok) throw new Error('Failed to create template');
+      
+      const newTemplate = await response.json();
+      
+      // Invalidate and refetch templates
+      queryClient.invalidateQueries(['templates']);
+      
+      // Show success toast
+      toast.success('Template created successfully');
+      
+      // Close modal and reset form
+      onClose();
+      setFormData({
+        title: '',
+        content: '',
+        description: '',
+        category: '',
+        variables: []
+      });
+    } catch (error) {
+      console.error('Error creating template:', error);
+      toast.error('Failed to create template');
+    }
+  };
+  
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create New Template</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="title">Template Title</Label>
+            <Input
+              id="title"
+              value={formData.title}
+              onChange={(e) => setFormData({...formData, title: e.target.value})}
+              placeholder="Enter template title"
+            />
+          </div>
+          
+          <div>
+            <Label htmlFor="content">Template Content</Label>
+            <Textarea
+              id="content"
+              value={formData.content}
+              onChange={(e) => setFormData({...formData, content: e.target.value})}
+              placeholder="Enter template content with {{variables}}"
+              rows={6}
+            />
+          </div>
+          
+          <div>
+            <Label htmlFor="description">Description</Label>
+            <Input
+              id="description"
+              value={formData.description}
+              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              placeholder="Brief description of this template"
+            />
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={createTemplate}>Create Template</Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+```
+
+### 3. Ensure Database Schema for Templates Exists
+
+```sql
+-- Check if templates table exists, if not create it
+CREATE TABLE IF NOT EXISTS templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  content TEXT NOT NULL,
+  description TEXT,
+  category VARCHAR(100),
+  variables JSONB DEFAULT '[]',
+  usage_count INTEGER DEFAULT 0,
+  is_public BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create index for better query performance
+CREATE INDEX IF NOT EXISTS idx_templates_user_id ON templates(user_id);
+CREATE INDEX IF NOT EXISTS idx_templates_created_at ON templates(created_at DESC);
+```
+
+### 4. Update Shared Types
+
+```typescript
+// In shared/types.ts
+export interface Template {
+  id: string;
+  userId: string;
+  title: string;
+  content: string;
+  description?: string;
+  category?: string;
+  variables: string[];
+  usageCount: number;
+  isPublic: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+## Verification Steps
+
+After implementing these fixes, verify:
+
+1. **Filter Panel Animation**:
+   - Click the filter button
+   - Panel should slide in smoothly from the left
+   - Clicking outside or close button should slide it out to the left
+   
+2. **Templates Page**:
+   - Navigate to Templates section
+   - Should show templates UI, not prompts empty state
+   - Should display "No templates found" if no templates exist
+   
+3. **Template Creation**:
+   - Click "Create Template" button
+   - Fill in the form and submit
+   - Template should appear immediately in the templates list
+   - Toast notification should confirm creation
+   - Templates should persist after page refresh
+
+## Additional Debug Commands
+
+If issues persist, run these debug checks in the browser console:
+
+```javascript
+// Check if templates are being fetched
+fetch('/api/templates', {
+  headers: {
+    'Authorization': `Bearer ${localStorage.getItem('token')}`
+  }
+}).then(res => res.json()).then(console.log);
+
+// Check current route
+console.log(window.location.pathname);
+
+// Check if templates table exists in database (run in database console)
+SELECT * FROM templates WHERE user_id = '[your-user-id]';
+```
+
+Please implement these fixes to resolve all three issues: filter animations, templates page display, and template visibility after creation.
