@@ -1,0 +1,358 @@
+# Implement Dashboard UI/UX Updates
+
+I need to implement several UI/UX improvements to match the design mockup. These changes will improve usability and visual consistency across the application.
+
+**Technical Context:**
+- Frontend: React 18.3.1 + TypeScript + Vite
+- UI Components: Radix UI + Tailwind CSS
+- Current layout has sidebar + header + main content area
+
+## UPDATE 1: Move Search Bar to Right Side
+
+The search bar needs to move from center to right-align next to the user profile icon.
+
+### Update Header Component
+
+```tsx
+// In components/Header.tsx or components/TopBar.tsx
+// Change from center-aligned to right-aligned search
+
+export const Header = () => {
+  return (
+    <header className="h-16 border-b bg-background px-6 flex items-center justify-between">
+      {/* Left side - Logo only */}
+      <div className="flex items-center">
+        <h1 className="text-xl font-bold">PromptLockr</h1>
+      </div>
+      
+      {/* Right side - Search and User Menu */}
+      <div className="flex items-center gap-4">
+        {/* Search Bar - Now on right */}
+        <div className="relative w-80">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Input
+            type="text"
+            placeholder="Search prompts, tags, or content..."
+            className="pl-10 w-full"
+          />
+        </div>
+        
+        {/* User Menu */}
+        <UserMenu />
+      </div>
+    </header>
+  );
+};
+```
+
+## UPDATE 2: Remove Numbers from Non-Folder Sidebar Items
+
+Remove count badges from sidebar items except for folders.
+
+### Update Sidebar Component
+
+```tsx
+// In components/Sidebar.tsx
+// Remove numbers from All Prompts, Favorites, Trash, Templates
+
+export const Sidebar = () => {
+  return (
+    <aside className="w-64 border-r bg-background">
+      {/* Navigation section */}
+      <div className="p-4">
+        <h3 className="text-xs uppercase text-gray-500 mb-2">Navigation</h3>
+        <nav className="space-y-1">
+          <NavItem href="/prompts" icon={<FileText />} label="All Prompts" />
+          {/* Remove count prop */}
+          
+          <NavItem href="/favorites" icon={<Heart />} label="Favorites" />
+          {/* No count badge */}
+          
+          <NavItem href="/trash" icon={<Trash />} label="Trash" />
+          {/* No count badge */}
+          
+          <NavItem href="/templates" icon={<FileCode />} label="Templates" />
+          {/* No count badge */}
+        </nav>
+      </div>
+      
+      {/* Folders section - KEEP counts here */}
+      <div className="p-4">
+        <h3 className="text-xs uppercase text-gray-500 mb-2">Folders</h3>
+        {folders.map(folder => (
+          <FolderItem 
+            key={folder.id} 
+            folder={folder} 
+            count={folder.promptCount} // Keep count for folders
+          />
+        ))}
+      </div>
+    </aside>
+  );
+};
+```
+
+## UPDATE 3: Make Sidebar Sticky and Full Viewport Height
+
+The sidebar should always be viewport height and not scroll with content.
+
+### Update Layout Structure
+
+```tsx
+// In the main layout wrapper (App.tsx or Layout component)
+// Ensure sidebar is fixed/sticky
+
+export const DashboardLayout = ({ children }) => {
+  return (
+    <div className="flex h-screen overflow-hidden">
+      {/* Sidebar - Fixed height and position */}
+      <aside className="w-64 border-r bg-background h-screen sticky top-0 overflow-y-auto">
+        <Sidebar />
+      </aside>
+      
+      {/* Main content area - Scrollable */}
+      <div className="flex-1 flex flex-col h-screen">
+        {/* Header - Fixed at top */}
+        <Header />
+        
+        {/* Content - Scrollable */}
+        <main className="flex-1 overflow-y-auto">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+// Alternative CSS approach
+// Add to global styles or sidebar component
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.main-content {
+  height: 100vh;
+  overflow-y: auto;
+}
+```
+
+## UPDATE 4: Remove "Recent" from Sidebar
+
+Delete the Recent menu item entirely from the navigation.
+
+```tsx
+// In components/Sidebar.tsx
+// Remove the Recent navigation item
+
+export const Sidebar = () => {
+  return (
+    <aside className="w-64 border-r bg-background h-screen">
+      <div className="p-4">
+        <h3 className="text-xs uppercase text-gray-500 mb-2">Navigation</h3>
+        <nav className="space-y-1">
+          <NavItem href="/prompts" icon={<FileText />} label="All Prompts" />
+          <NavItem href="/favorites" icon={<Heart />} label="Favorites" />
+          {/* REMOVE THIS LINE: */}
+          {/* <NavItem href="/recent" icon={<Clock />} label="Recent" /> */}
+          <NavItem href="/trash" icon={<Trash />} label="Trash" />
+          <NavItem href="/templates" icon={<FileCode />} label="Templates" />
+        </nav>
+      </div>
+    </aside>
+  );
+};
+
+// Also remove from routing
+// In App.tsx or router configuration, remove:
+// <Route path="/recent" component={RecentPage} />
+```
+
+## UPDATE 5: Add Sort Feature
+
+Add a sort dropdown next to the filter button for sorting options.
+
+### Add Sort Dropdown Component
+
+```tsx
+// In pages/Prompts.tsx (and other list pages)
+// Add sort dropdown next to filter button
+
+import { ChevronDown, ArrowUpAZ, ArrowDownAZ, Clock, Star } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+
+export const PromptsPage = () => {
+  const [sortBy, setSortBy] = useState('recent'); // recent, a-z, z-a, oldest, favorites
+  
+  const sortOptions = [
+    { value: 'recent', label: 'Most Recent', icon: <Clock className="w-4 h-4" /> },
+    { value: 'oldest', label: 'Oldest First', icon: <Clock className="w-4 h-4" /> },
+    { value: 'a-z', label: 'A to Z', icon: <ArrowUpAZ className="w-4 h-4" /> },
+    { value: 'z-a', label: 'Z to A', icon: <ArrowDownAZ className="w-4 h-4" /> },
+    { value: 'favorites', label: 'Most Favorited', icon: <Star className="w-4 h-4" /> },
+  ];
+  
+  const sortPrompts = (prompts) => {
+    switch (sortBy) {
+      case 'recent':
+        return [...prompts].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      case 'oldest':
+        return [...prompts].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      case 'a-z':
+        return [...prompts].sort((a, b) => a.title.localeCompare(b.title));
+      case 'z-a':
+        return [...prompts].sort((a, b) => b.title.localeCompare(a.title));
+      case 'favorites':
+        return [...prompts].sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
+      default:
+        return prompts;
+    }
+  };
+  
+  return (
+    <div className="p-6">
+      {/* Page header with controls */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">All Prompts</h1>
+          <p className="text-gray-500">Manage and organize your AI prompts</p>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {/* Sort Dropdown - NEW */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="flex items-center gap-2">
+                <ArrowUpAZ className="w-4 h-4" />
+                Sort
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {sortOptions.map(option => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => setSortBy(option.value)}
+                  className={sortBy === option.value ? 'bg-accent' : ''}
+                >
+                  {option.icon}
+                  <span className="ml-2">{option.label}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          {/* Filter Button - Existing */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsFilterOpen(true)}
+            className="flex items-center gap-2"
+          >
+            <Filter className="w-4 h-4" />
+            Filter
+          </Button>
+          
+          {/* View Toggle - Existing */}
+          <ViewToggle />
+          
+          {/* Export - Existing */}
+          <ExportButton />
+        </div>
+      </div>
+      
+      {/* Apply sorting to prompts before rendering */}
+      {sortPrompts(prompts).map(prompt => (
+        <PromptCard key={prompt.id} prompt={prompt} />
+      ))}
+    </div>
+  );
+};
+```
+
+## UPDATE 6: Fix Filter Button Hover Color
+
+Change the filter button hover state to use #f0f5f7 instead of #0cc991.
+
+### Update Button Styles
+
+```css
+/* In global CSS or component styles */
+/* Update the filter button hover state specifically */
+
+/* If using Tailwind classes */
+.filter-button:hover {
+  background-color: #f0f5f7 !important;
+}
+
+/* Or in the component */
+<Button
+  variant="outline"
+  size="sm"
+  onClick={() => setIsFilterOpen(true)}
+  className="flex items-center gap-2 hover:bg-[#f0f5f7] transition-colors"
+  style={{
+    '--hover-bg': '#f0f5f7'
+  }}
+>
+  <Filter className="w-4 h-4" />
+  Filter
+</Button>
+
+/* Or update Tailwind config */
+// tailwind.config.js
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        'filter-hover': '#f0f5f7', // Light gray for filter button hover
+      }
+    }
+  }
+}
+
+// Then use: className="hover:bg-filter-hover"
+```
+
+### Alternative: Update Button Component Variant
+
+```tsx
+// If using a custom Button component with variants
+// Update the outline variant hover state
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors",
+  {
+    variants: {
+      variant: {
+        outline: "border border-input bg-background hover:bg-[#f0f5f7] hover:text-accent-foreground",
+        // Changed from hover:bg-accent or hover:bg-[#0cc991] to hover:bg-[#f0f5f7]
+      }
+    }
+  }
+);
+```
+
+## Verification Checklist
+
+After implementing these changes:
+
+1. ✅ **Search bar** is right-aligned next to user profile icon
+2. ✅ **Sidebar counts** removed from All Prompts, Favorites, Trash, Templates (keep for folders)
+3. ✅ **Sidebar** is sticky, full viewport height, doesn't scroll with content
+4. ✅ **Recent** menu item completely removed
+5. ✅ **Sort dropdown** added with options: Recent, Oldest, A-Z, Z-A, Most Favorited
+6. ✅ **Filter button** hover color is #f0f5f7 (light gray) not #0cc991 (green)
+
+## Testing
+
+```javascript
+// Verify sidebar is sticky
+document.querySelector('aside').style.position; // Should be 'sticky' or 'fixed'
+
+// Verify filter button hover color
+// Hover over filter button and inspect computed styles
+// Background should be rgb(240, 245, 247) which is #f0f5f7
+```
