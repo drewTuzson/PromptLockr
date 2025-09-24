@@ -48,7 +48,7 @@ export const prompts = pgTable("prompts", {
 
 export const enhancementSessions = pgTable("enhancement_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull(),
   promptId: varchar("prompt_id").references(() => prompts.id, { onDelete: 'set null' }),
   originalContent: text("original_content").notNull(),
   enhancedContent: text("enhanced_content"),
@@ -71,7 +71,7 @@ export const variableTypeEnum = pgEnum('variable_type', ['text', 'dropdown', 'nu
 
 export const templates = pgTable("templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   content: text("content").notNull(),

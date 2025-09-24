@@ -1,0 +1,136 @@
+## Fix AI Enhancement Feature for Unsaved Prompts
+
+I'm experiencing an issue where the "Enhance with AI" feature throws a 500 error when used on a new prompt before it's been saved. The enhancement works correctly when used from the three dots menu on already saved prompts.
+
+**Current Error:** 
+- Status: 500
+- Message: "Failed to enhance prompt"
+- Occurs when clicking "Enhance" in the AI Prompt Enhancement modal before saving a new prompt
+
+**Expected Behavior:**
+The enhancement should work for both saved and unsaved prompts, either by:
+1. Using the prompt content directly without requiring an ID
+2. Temporarily saving the prompt before enhancement
+3. Handling unsaved prompts with a different approach
+
+**Technical Context:**
+- Frontend: React 18.3.1 + TypeScript + Vite
+- Backend: Express.js with TypeScript
+- Database: PostgreSQL with Drizzle ORM
+- Authentication: JWT tokens
+- UI Components: Radix UI + Tailwind CSS
+- State Management: React Query
+
+**Please analyze and fix the following:**
+
+1. **Backend Enhancement Endpoint** - Check `/api/prompts/:id/enhance` or similar endpoint:
+   - Verify if it's requiring a prompt ID that doesn't exist for new prompts
+   - Modify to accept either an ID (for saved prompts) OR raw content (for unsaved prompts)
+   - Ensure proper error handling for both scenarios
+
+2. **Frontend Enhancement Modal** - In the component handling the enhancement:
+   - Check how it's calling the enhancement API
+   - Verify if it's passing the correct data (ID vs content) based on prompt state
+   - Ensure it handles both saved and unsaved prompt scenarios
+
+3. **State Management** - Review the enhancement flow:
+   - How is the prompt data being passed to the enhancement modal?
+   - Is there a flag indicating if the prompt is saved or not?
+   - Are we properly handling the response for unsaved prompts?
+
+**Code areas to check:**
+
+1. **Backend route handler** (likely in `server/routes.ts` or similar):
+```typescript
+// Look for the enhancement endpoint - it might look like:
+app.post('/api/prompts/:id/enhance', authenticateToken, async (req, res) => {
+  // This needs to handle cases where :id might be 'new' or undefined
+});
+
+// Or it might need a separate endpoint for unsaved prompts:
+app.post('/api/prompts/enhance', authenticateToken, async (req, res) => {
+  const { content, platform, tone, focus } = req.body;
+  // Process enhancement without requiring a saved prompt
+});
+```
+
+2. **Frontend enhancement hook/function** (likely in `client/src/hooks/` or component):
+```typescript
+// Check how the enhancement is being triggered
+const handleEnhance = async () => {
+  if (promptId && promptId !== 'new') {
+    // Enhance saved prompt
+    const response = await fetch(`/api/prompts/${promptId}/enhance`, {...});
+  } else {
+    // Enhance unsaved prompt - need to send content directly
+    const response = await fetch('/api/prompts/enhance', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ 
+        content: originalContent,
+        platform: targetPlatform,
+        tone: selectedTone,
+        focus: selectedFocus
+      })
+    });
+  }
+};
+```
+
+3. **Enhancement Modal Component** - Verify it's receiving and handling data correctly:
+   - Check props being passed to the modal
+   - Verify how it determines if a prompt is saved or not
+   - Ensure error handling displays user-friendly messages
+
+**Proposed Solution Steps:**
+
+1. **Create a dual-purpose enhancement endpoint** that can handle both scenarios:
+   - Modify existing endpoint to accept content in request body as fallback
+   - OR create a separate endpoint `/api/prompts/enhance` for unsaved prompts
+
+2. **Update the frontend logic** to detect if a prompt is saved:
+   - Check if prompt has an ID and it's not 'new' or temporary
+   - Call appropriate API endpoint based on prompt state
+   - Pass content directly for unsaved prompts
+
+3. **Add proper error handling and loading states**:
+   - Show appropriate error messages for different failure scenarios
+   - Add loading indicators during enhancement
+   - Handle network timeouts and API errors gracefully
+
+4. **Test both workflows**:
+   - Enhancing a new prompt before saving
+   - Enhancing an existing saved prompt
+   - Verify enhancement history tracking works correctly
+
+**Additional Considerations:**
+- Rate limiting (mentioned in env vars: `ENHANCEMENT_RATE_LIMIT=10`)
+- Claude API integration error handling
+- Maintaining enhancement history for saved vs unsaved prompts
+- Character count validation (187/10,000 shown in modal)
+- Platform-specific enhancement logic (Midjourney selected in screenshot)
+
+**Database Schema Note:**
+The prompts table includes these enhancement-related fields that may need updating:
+- `enhancement_history: jsonb`
+- `enhancement_count: integer DEFAULT 0`
+- `is_enhanced: boolean DEFAULT false`
+
+**Environment Variables to Verify:**
+```bash
+CLAUDE_API_KEY=...               # Ensure this is set
+CLAUDE_API_URL=...               # Verify correct endpoint
+ENHANCEMENT_RATE_LIMIT=10        # Check rate limiting
+```
+
+**Expected Outcome:**
+After implementing this fix, users should be able to:
+1. Click "Enhance with AI" on a new, unsaved prompt
+2. See the enhancement preview without errors
+3. Apply the enhancement to their prompt
+4. Then save the enhanced prompt as a new entry
+
+Please implement a fix that allows the enhancement feature to work seamlessly whether the prompt is saved or not, while maintaining the existing functionality for saved prompts. The solution should be backwards compatible and not break any existing features.
