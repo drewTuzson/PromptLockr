@@ -110,17 +110,18 @@ export default function TemplatesPage() {
               </div>
             </div>
 
-            {/* Search Bar - Always show for templates */}
-            <div className="flex items-center space-x-3 flex-1 max-w-md mx-8">
-              <SearchBar
-                onSearch={setSearchQuery}
-                placeholder="Search templates, tags, or content..."
-                className="w-full"
-              />
-            </div>
-
-            {/* Header Actions */}
-            <div className="flex items-center space-x-3">
+            {/* Header Actions - Search Bar and User Menu - EXACT SAME as Dashboard */}
+            <div className="flex items-center space-x-4">
+              {/* Search Bar - Now on right side - EXACT SAME as Dashboard */}
+              <div className="relative w-80">
+                <SearchBar
+                  onSearch={setSearchQuery}
+                  placeholder="Search templates, tags, or content..."
+                  className="w-full"
+                />
+              </div>
+              
+              {/* User Menu - EXACT SAME as Dashboard */}
               <Link to="/settings" className="cursor-pointer">
                 <div 
                   data-testid="link-profile-settings"
