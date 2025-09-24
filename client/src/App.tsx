@@ -19,10 +19,10 @@ function Router() {
       <Route path="/" component={() => <Redirect to="/dashboard" />} />
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/dashboard/:view" component={Dashboard} />
-      <Route path="/dashboard/folder/:folderId" component={Dashboard} />
       <Route path="/dashboard/templates" component={TemplatesPage} />
+      <Route path="/dashboard/folder/:folderId" component={Dashboard} />
+      <Route path="/dashboard/:view" component={Dashboard} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/settings" component={Settings} />
       <Route path="/test-auth" component={TestAuth} />
       {/* Fallback to 404 */}
