@@ -137,7 +137,8 @@ export function FilterDrawer({ filters, onFiltersChange, className }: FilterDraw
                 damping: 25,
                 stiffness: 300
               }}
-              className="fixed top-0 left-0 h-full w-96 max-w-[90vw] bg-background shadow-xl border-r z-50 flex flex-col"
+              className="fixed inset-y-0 left-0 w-96 max-w-[90vw] bg-background shadow-xl border-r z-50 flex flex-col"
+              style={{ margin: 0, padding: 0 }}
             >
               {/* Header */}
               <div className="flex items-center justify-between p-6 border-b bg-card/50">
@@ -257,29 +258,23 @@ export function FilterDrawer({ filters, onFiltersChange, className }: FilterDraw
             <div className="space-y-3">
               <Label className="text-sm font-medium text-foreground">Date Filters</Label>
               
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">Created Date</Label>
-                <DateRangePicker
-                  label="Created Date"
-                  startDate={typeof localFilters.dateCreated?.start === 'string' ? new Date(localFilters.dateCreated.start) : localFilters.dateCreated?.start}
-                  endDate={typeof localFilters.dateCreated?.end === 'string' ? new Date(localFilters.dateCreated.end) : localFilters.dateCreated?.end}
-                  onDateChange={(start, end) => updateLocalFilters({
-                    dateCreated: start || end ? { start: start?.toISOString(), end: end?.toISOString() } : undefined
-                  })}
-                />
-              </div>
+              <DateRangePicker
+                label="Created Date"
+                startDate={typeof localFilters.dateCreated?.start === 'string' ? new Date(localFilters.dateCreated.start) : localFilters.dateCreated?.start}
+                endDate={typeof localFilters.dateCreated?.end === 'string' ? new Date(localFilters.dateCreated.end) : localFilters.dateCreated?.end}
+                onDateChange={(start, end) => updateLocalFilters({
+                  dateCreated: start || end ? { start: start?.toISOString(), end: end?.toISOString() } : undefined
+                })}
+              />
 
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">Modified Date</Label>
-                <DateRangePicker
-                  label="Modified Date"
-                  startDate={typeof localFilters.dateModified?.start === 'string' ? new Date(localFilters.dateModified.start) : localFilters.dateModified?.start}
-                  endDate={typeof localFilters.dateModified?.end === 'string' ? new Date(localFilters.dateModified.end) : localFilters.dateModified?.end}
-                  onDateChange={(start, end) => updateLocalFilters({
-                    dateModified: start || end ? { start: start?.toISOString(), end: end?.toISOString() } : undefined
-                  })}
-                />
-              </div>
+              <DateRangePicker
+                label="Modified Date"
+                startDate={typeof localFilters.dateModified?.start === 'string' ? new Date(localFilters.dateModified.start) : localFilters.dateModified?.start}
+                endDate={typeof localFilters.dateModified?.end === 'string' ? new Date(localFilters.dateModified.end) : localFilters.dateModified?.end}
+                onDateChange={(start, end) => updateLocalFilters({
+                  dateModified: start || end ? { start: start?.toISOString(), end: end?.toISOString() } : undefined
+                })}
+              />
             </div>
 
             {/* Sort Options */}
