@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Menu, Download, RotateCcw, ArrowLeft, Trash2, Grid3X3, List, Edit } from 'lucide-react';
+import { Menu, Download, RotateCcw, ArrowLeft, Trash2, Grid3X3, List, Edit, ChevronDown, ArrowUpAZ, ArrowDownAZ, Clock, Star } from 'lucide-react';
 import { useRoute, Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/dashboard/Sidebar';
@@ -28,7 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { RequireAuth } from '@/components/auth/AuthProvider';
-import { usePrompts, useFavoritePrompts, useRecentPrompts, useTrashedPrompts, useRestorePrompt, usePermanentlyDeletePrompt } from '@/hooks/usePrompts';
+import { usePrompts, useFavoritePrompts, useTrashedPrompts, useRestorePrompt, usePermanentlyDeletePrompt } from '@/hooks/usePrompts';
 import { useFolders } from '@/hooks/useFolders';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useFilteredPrompts } from '@/hooks/useFilteredPrompts';
@@ -71,14 +71,50 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
   const [advancedFilters, setAdvancedFilters] = useState<PromptFilters>({});
   const [useAdvancedFiltering, setUseAdvancedFiltering] = useState(false);
+  const [sortBy, setSortBy] = useState('recent');
   
   const isMobile = useIsMobile();
+  
+  // Sort options configuration
+  const sortOptions = [
+    { value: 'recent', label: 'Most Recent', icon: <Clock className="w-4 h-4" /> },
+    { value: 'oldest', label: 'Oldest First', icon: <Clock className="w-4 h-4" /> },
+    { value: 'a-z', label: 'A to Z', icon: <ArrowUpAZ className="w-4 h-4" /> },
+    { value: 'z-a', label: 'Z to A', icon: <ArrowDownAZ className="w-4 h-4" /> },
+    { value: 'favorites', label: 'Most Favorited', icon: <Star className="w-4 h-4" /> },
+  ];
+  
+  // Function to sort prompts
+  const sortPrompts = (prompts: Prompt[]) => {
+    const sortedPrompts = [...prompts];
+    switch (sortBy) {
+      case 'recent':
+        return sortedPrompts.sort((a, b) => {
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return dateB - dateA;
+        });
+      case 'oldest':
+        return sortedPrompts.sort((a, b) => {
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return dateA - dateB;
+        });
+      case 'a-z':
+        return sortedPrompts.sort((a, b) => a.title.localeCompare(b.title));
+      case 'z-a':
+        return sortedPrompts.sort((a, b) => b.title.localeCompare(a.title));
+      case 'favorites':
+        return sortedPrompts.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
+      default:
+        return sortedPrompts;
+    }
+  };
   
   // Fetch data based on current view and filtering method
   const { data: filteredData, isLoading: filteredLoading } = useFilteredPrompts(advancedFilters);
   const { data: allPrompts = [], isLoading: allLoading } = usePrompts(searchQuery);
   const { data: favoritePrompts = [], isLoading: favoritesLoading } = useFavoritePrompts();
-  const { data: recentPrompts = [], isLoading: recentLoading } = useRecentPrompts();
   const { data: trashedPrompts = [], isLoading: trashedLoading } = useTrashedPrompts();
   const { data: folders = [] } = useFolders();
   const { data: templates = [], isLoading: templatesLoading } = useTemplates();
@@ -114,10 +150,6 @@ export default function Dashboard() {
         sourcePrompts = favoritePrompts;
         isLoading = favoritesLoading;
         break;
-      case 'recent':
-        sourcePrompts = recentPrompts;
-        isLoading = recentLoading;
-        break;
       case 'trash':
         sourcePrompts = trashedPrompts;
         isLoading = trashedLoading;
@@ -138,7 +170,8 @@ export default function Dashboard() {
     }
   }
   
-  const prompts = useAdvancedFiltering ? sourcePrompts : sourcePrompts;
+  // Apply sorting to prompts
+  const prompts = sortPrompts(sourcePrompts);
 
   // Handle advanced filter changes
   const handleAdvancedFiltersChange = (filters: PromptFilters) => {
@@ -177,8 +210,6 @@ export default function Dashboard() {
     switch (view) {
       case 'favorites':
         return 'Favorites';
-      case 'recent':
-        return 'Recent Prompts';
       case 'trash':
         return 'Trash';
       case 'folder':
@@ -192,8 +223,6 @@ export default function Dashboard() {
     switch (view) {
       case 'favorites':
         return 'Your favorited prompts';
-      case 'recent':
-        return 'Recently accessed prompts';
       case 'trash':
         return 'Deleted prompts that can be restored or permanently removed';
       case 'folder':
@@ -310,19 +339,20 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Search Bar - Only show for prompt views */}
-            {view !== 'templates' && (
-              <div className="flex items-center space-x-3 flex-1 max-w-md mx-8">
-                <SearchBar
-                  onSearch={setSearchQuery}
-                  placeholder="Search prompts, tags, or content..."
-                  className="w-full"
-                />
-              </div>
-            )}
-
-            {/* Header Actions */}
-            <div className="flex items-center space-x-3">
+            {/* Header Actions - Search Bar and User Menu */}
+            <div className="flex items-center space-x-4">
+              {/* Search Bar - Now on right side */}
+              {view !== 'templates' && (
+                <div className="relative w-80">
+                  <SearchBar
+                    onSearch={setSearchQuery}
+                    placeholder="Search prompts, tags, or content..."
+                    className="w-full"
+                  />
+                </div>
+              )}
+              
+              {/* User Menu */}
               <Link to="/settings" className="cursor-pointer">
                 <div 
                   data-testid="link-profile-settings"
@@ -337,12 +367,12 @@ export default function Dashboard() {
         </header>
 
         <div className="flex">
-          {/* Sidebar */}
+          {/* Sidebar - Fixed/Sticky */}
           <Sidebar
             onCreatePrompt={handleCreatePrompt}
             onImport={handleImport}
             className={cn(
-              "lg:translate-x-0 fixed lg:relative z-30",
+              "lg:translate-x-0 fixed lg:sticky lg:top-[73px] z-30",
               isMobile && sidebarOpen ? "translate-x-0" : isMobile ? "-translate-x-full" : ""
             )}
           />
@@ -356,7 +386,7 @@ export default function Dashboard() {
           )}
 
           {/* Main Content */}
-          <main className="flex-1 p-6 lg:p-8">
+          <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
 
             {/* Content Header */}
             <div className="flex items-center justify-between mb-6">
@@ -381,11 +411,45 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center space-x-3">
                 
+                {/* Sort Dropdown - Only show for prompt views */}
+                {view !== 'templates' && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex items-center gap-2 hover-bg-consistent"
+                        data-testid="button-sort"
+                      >
+                        <ArrowUpAZ className="w-4 h-4" />
+                        Sort
+                        <ChevronDown className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {sortOptions.map(option => (
+                        <DropdownMenuItem
+                          key={option.value}
+                          onClick={() => setSortBy(option.value)}
+                          className={sortBy === option.value ? 'bg-accent' : ''}
+                          data-testid={`sort-option-${option.value}`}
+                        >
+                          {option.icon}
+                          <span className="ml-2">{option.label}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                
                 {/* Filter Button - Only show for prompt views */}
                 {view !== 'templates' && (
                   <FilterDrawer
                     filters={advancedFilters}
                     onFiltersChange={handleAdvancedFiltersChange}
+                    className="hover:bg-[#f0f5f7] transition-colors"
                   />
                 )}
                 
@@ -453,12 +517,11 @@ export default function Dashboard() {
                 <p className="text-muted-foreground mb-6">
                   {searchQuery ? 'Try adjusting your search terms.' : 
                    view === 'favorites' ? 'No favorites yet. Start by favoriting some prompts!' :
-                   view === 'recent' ? 'No recent prompts. Start using some prompts to see them here.' :
                    view === 'trash' ? 'Trash is empty.' :
                    'Get started by creating your first prompt.'}
                 </p>
                 {/* Only show create button for main views, not for trash or favorites */}
-                {!searchQuery && view !== 'favorites' && view !== 'recent' && view !== 'trash' && (
+                {!searchQuery && view !== 'favorites' && view !== 'trash' && (
                   <Button
                     data-testid="button-create-first-prompt"
                     onClick={handleCreatePrompt}

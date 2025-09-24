@@ -5,7 +5,6 @@ import {
   Upload, 
   Briefcase, 
   Heart, 
-  Clock, 
   Trash2, 
   Folder, 
   ChevronRight,
@@ -22,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/components/ui/theme-provider';
-import { usePrompts, useFavoritePrompts, useRecentPrompts, useTrashedPrompts } from '@/hooks/usePrompts';
+import { usePrompts, useFavoritePrompts, useTrashedPrompts } from '@/hooks/usePrompts';
 import { useFolders, useCreateFolder } from '@/hooks/useFolders';
 import { FolderItem } from './FolderItem';
 import { cn } from '@/lib/utils';
@@ -40,7 +39,6 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
   
   const { data: allPrompts = [] } = usePrompts();
   const { data: favoritePrompts = [] } = useFavoritePrompts();
-  const { data: recentPrompts = [] } = useRecentPrompts();
   const { data: trashedPrompts = [] } = useTrashedPrompts();
   const { data: folders = [] } = useFolders();
   const createFolder = useCreateFolder();
@@ -79,7 +77,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
   };
 
   return (
-    <aside className={cn("w-64 bg-card border-r border-border h-screen flex flex-col sidebar-transition", className)}>
+    <aside className={cn("w-64 bg-card border-r border-border h-[calc(100vh-73px)] flex flex-col sidebar-transition", className)}>
       {/* Top Section - Fixed */}
       <div className="flex-shrink-0 p-6 space-y-6">
         {/* Quick Actions */}
@@ -121,9 +119,6 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             >
               <Briefcase className="w-4 h-4" />
               <span className="font-medium">All Prompts</span>
-              <Badge variant="secondary" className="ml-auto text-xs px-2 py-1 rounded-full">
-                {allPrompts.length}
-              </Badge>
             </div>
           </Link>
           
@@ -139,26 +134,9 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             >
               <Heart className="w-4 h-4" />
               <span>Favorites</span>
-              <Badge variant="default" className="ml-auto text-xs bg-accent text-accent-foreground px-2 py-1 rounded-full">
-                {favoritePrompts.length}
-              </Badge>
             </div>
           </Link>
           
-          <Link href="/dashboard/recent" className="block">
-            <div
-              data-testid="link-recent"
-              className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
-                location === '/dashboard/recent'
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground"
-              )}
-            >
-              <Clock className="w-4 h-4" />
-              <span>Recent</span>
-            </div>
-          </Link>
           
           <Link href="/dashboard/trash" className="block">
             <div
@@ -172,9 +150,6 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             >
               <Trash2 className="w-4 h-4" />
               <span>Trash</span>
-              <Badge variant="secondary" className="ml-auto text-xs px-2 py-1 rounded-full">
-                {trashedPrompts.length}
-              </Badge>
             </div>
           </Link>
           
