@@ -231,7 +231,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           or(
             ilike(prompts.title, searchTerm),
             ilike(prompts.content, searchTerm),
-            ilike(prompts.tags, searchTerm)
+            // Use array-safe search for tags (text[] column)
+            sql`exists (select 1 from unnest(${prompts.tags}) t where t ilike ${searchTerm})`
           )
         )!;
       }
