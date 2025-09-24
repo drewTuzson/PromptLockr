@@ -1,5 +1,6 @@
 import * as React from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { motion, AnimatePresence } from 'framer-motion';
 import { FilterIcon, XIcon, SearchIcon } from 'lucide-react';
 import { DateRangePicker } from './DateRangePicker';
 import { MultiSelect } from './MultiSelect';
@@ -93,42 +94,65 @@ export function FilterDrawer({ filters, onFiltersChange, className }: FilterDraw
   }, [searchInput]);
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={setIsOpen}>
-      <Dialog.Trigger asChild>
-        <Button 
-          variant="outline" 
-          className={`flex items-center gap-2 ${className || ''}`}
-          data-testid="button-filter-drawer"
-        >
-          <FilterIcon className="w-4 h-4" />
-          Filter
-          {activeFilterCount > 0 && (
-            <Badge 
-              variant="secondary" 
-              className="px-2 py-0.5 text-xs rounded-full"
-              data-testid="badge-active-filters"
-            >
-              {activeFilterCount}
-            </Badge>
-          )}
-        </Button>
-      </Dialog.Trigger>
+    <>
+      <Button 
+        variant="outline" 
+        className={`flex items-center gap-2 ${className || ''}`}
+        data-testid="button-filter-drawer"
+        onClick={() => setIsOpen(true)}
+      >
+        <FilterIcon className="w-4 h-4" />
+        Filter
+        {activeFilterCount > 0 && (
+          <Badge 
+            variant="secondary" 
+            className="px-2 py-0.5 text-xs rounded-full"
+            data-testid="badge-active-filters"
+          >
+            {activeFilterCount}
+          </Badge>
+        )}
+      </Button>
 
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40" />
-        <Dialog.Content className="fixed top-0 right-0 h-full w-96 max-w-[90vw] bg-background shadow-xl border-l z-50 flex flex-col">
-          
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b bg-card/50">
-            <Dialog.Title className="text-lg font-semibold text-foreground">
-              Search & Filter
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <Button variant="ghost" size="sm" className="p-2">
-                <XIcon className="w-4 h-4" />
-              </Button>
-            </Dialog.Close>
-          </div>
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40"
+              onClick={() => setIsOpen(false)}
+            />
+            
+            {/* Panel */}
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{
+                type: 'spring',
+                damping: 25,
+                stiffness: 300
+              }}
+              className="fixed top-0 left-0 h-full w-96 max-w-[90vw] bg-background shadow-xl border-r z-50 flex flex-col"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-6 border-b bg-card/50">
+                <h2 className="text-lg font-semibold text-foreground">
+                  Search & Filter
+                </h2>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="p-2"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <XIcon className="w-4 h-4" />
+                </Button>
+              </div>
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -300,9 +324,11 @@ export function FilterDrawer({ filters, onFiltersChange, className }: FilterDraw
             >
               Apply Filters
             </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
