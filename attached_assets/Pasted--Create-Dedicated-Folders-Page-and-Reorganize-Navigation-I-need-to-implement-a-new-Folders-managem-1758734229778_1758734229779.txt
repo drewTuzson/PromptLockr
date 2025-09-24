@@ -1,0 +1,603 @@
+# Create Dedicated Folders Page and Reorganize Navigation
+
+I need to implement a new Folders management page and reorganize the sidebar navigation. The folders functionality will move from the sidebar to its own dedicated page with full CRUD operations.
+
+**Technical Context:**
+- Frontend: React 18.3.1 + TypeScript + Vite
+- UI Components: Radix UI + Tailwind CSS
+- Database: PostgreSQL with Drizzle ORM
+- Current folders are displayed in sidebar, need to move to dedicated page
+
+## CHANGE 1: Reorder and Update Sidebar Navigation
+
+Remove the folders section and reorder navigation items.
+
+### Update Sidebar Component
+
+```tsx
+// components/Sidebar.tsx
+// COMPLETE REPLACEMENT - New order and no folders section
+
+import { FileText, Heart, Folder, FileCode, Trash2, Plus } from 'lucide-react';
+import { NavLink } from '@/components/NavLink';
+import { Button } from '@/components/ui/button';
+
+export const Sidebar = () => {
+  return (
+    <aside className="w-64 border-r bg-background h-screen sticky top-0 flex flex-col">
+      {/* Top Section - New/Import buttons */}
+      <div className="p-4 border-b">
+        <Button className="w-full mb-2" onClick={() => window.location.href = '/prompts/new'}>
+          <Plus className="w-4 h-4 mr-2" />
+          New Prompt
+        </Button>
+        <Button variant="outline" className="w-full">
+          <Upload className="w-4 h-4 mr-2" />
+          Import
+        </Button>
+      </div>
+
+      {/* Navigation - NEW ORDER */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4">
+          <h3 className="text-xs uppercase text-gray-500 mb-2">Navigation</h3>
+          <nav className="space-y-1">
+            {/* New order: All Prompts, Favorites, Folders, Templates, Trash */}
+            <NavLink href="/prompts" icon={<FileText />} label="All Prompts" />
+            <NavLink href="/favorites" icon={<Heart />} label="Favorites" />
+            <NavLink href="/folders" icon={<Folder />} label="Folders" />
+            <NavLink href="/templates" icon={<FileCode />} label="Templates" />
+            <NavLink href="/trash" icon={<Trash2 />} label="Trash" />
+          </nav>
+        </div>
+        
+        {/* REMOVED: No more folders section here */}
+        {/* Previous folders listing has been completely removed */}
+      </div>
+
+      {/* Bottom Section - Settings */}
+      <div className="p-4 border-t">
+        <NavLink href="/settings" icon={<Settings />} label="Settings" />
+        <div className="mt-2">
+          <DarkModeToggle />
+        </div>
+        <Button variant="ghost" className="w-full justify-start mt-2" onClick={handleLogout}>
+          <LogOut className="w-4 h-4 mr-2" />
+          Logout
+        </Button>
+      </div>
+    </aside>
+  );
+};
+```
+
+## CHANGE 2: Create New Folders Page
+
+Create a dedicated folders management page with full CRUD functionality.
+
+### Create Folders Page Component
+
+```tsx
+// pages/Folders.tsx or pages/FoldersPage.tsx
+// NEW FILE - Complete folders management page
+
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plus, FolderOpen, Edit2, Trash2, ChevronRight, Grid, List } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
+
+export const FoldersPage = () => {
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingFolder, setEditingFolder] = useState(null);
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  const queryClient = useQueryClient();
+
+  // Fetch all folders
+  const { data: folders = [], isLoading } = useQuery({
+    queryKey: ['folders'],
+    queryFn: async () => {
+      const response = await fetch('/api/folders', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch folders');
+      return response.json();
+    }
+  });
+
+  // Fetch prompts for selected folder
+  const { data: folderPrompts = [] } = useQuery({
+    queryKey: ['folder-prompts', selectedFolder?.id],
+    queryFn: async () => {
+      if (!selectedFolder) return [];
+      const response = await fetch(`/api/folders/${selectedFolder.id}/prompts`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch folder prompts');
+      return response.json();
+    },
+    enabled: !!selectedFolder
+  });
+
+  // Create folder mutation
+  const createFolder = useMutation({
+    mutationFn: async (name: string) => {
+      const response = await fetch('/api/folders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ name })
+      });
+      if (!response.ok) throw new Error('Failed to create folder');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['folders']);
+      toast.success('Folder created successfully');
+      setIsCreateModalOpen(false);
+    }
+  });
+
+  // Update folder mutation
+  const updateFolder = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const response = await fetch(`/api/folders/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ name })
+      });
+      if (!response.ok) throw new Error('Failed to update folder');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['folders']);
+      toast.success('Folder updated successfully');
+      setEditingFolder(null);
+    }
+  });
+
+  // Delete folder mutation
+  const deleteFolder = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/folders/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to delete folder');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['folders']);
+      toast.success('Folder deleted successfully');
+      if (selectedFolder?.id === id) {
+        setSelectedFolder(null);
+      }
+    }
+  });
+
+  return (
+    <div className="flex h-screen bg-background">
+      {/* Sidebar */}
+      <Sidebar />
+      
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Header - Same as other pages */}
+        <Header />
+        
+        {/* Folders Content */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {/* Page Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold">Folders</h1>
+              <p className="text-gray-500">Organize your prompts into folders</p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* View Toggle */}
+              <div className="flex rounded-lg border">
+                <Button
+                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('grid')}
+                  className="rounded-r-none"
+                >
+                  <Grid className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'list' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('list')}
+                  className="rounded-l-none"
+                >
+                  <List className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              {/* Create Folder Button */}
+              <Button onClick={() => setIsCreateModalOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                New Folder
+              </Button>
+            </div>
+          </div>
+
+          {/* Folders Display */}
+          {!selectedFolder ? (
+            // Show all folders
+            <div>
+              {isLoading ? (
+                <div className="flex justify-center items-center h-64">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+                </div>
+              ) : folders.length > 0 ? (
+                <div className={
+                  viewMode === 'grid' 
+                    ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
+                    : 'space-y-2'
+                }>
+                  {folders.map((folder) => (
+                    <FolderCard
+                      key={folder.id}
+                      folder={folder}
+                      viewMode={viewMode}
+                      onOpen={() => setSelectedFolder(folder)}
+                      onEdit={() => setEditingFolder(folder)}
+                      onDelete={() => {
+                        if (confirm('Delete this folder? Prompts will not be deleted.')) {
+                          deleteFolder.mutate(folder.id);
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-64">
+                  <FolderOpen className="w-16 h-16 text-gray-400 mb-4" />
+                  <h2 className="text-xl font-semibold mb-2">No folders yet</h2>
+                  <p className="text-gray-500 mb-4">Create folders to organize your prompts</p>
+                  <Button onClick={() => setIsCreateModalOpen(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Your First Folder
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            // Show folder contents
+            <div>
+              {/* Breadcrumb */}
+              <div className="flex items-center gap-2 mb-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedFolder(null)}
+                >
+                  Folders
+                </Button>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <span className="font-medium">{selectedFolder.name}</span>
+              </div>
+
+              {/* Folder Actions */}
+              <div className="flex items-center gap-2 mb-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditingFolder(selectedFolder)}
+                >
+                  <Edit2 className="w-4 h-4 mr-2" />
+                  Rename
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm('Delete this folder? Prompts will not be deleted.')) {
+                      deleteFolder.mutate(selectedFolder.id);
+                    }
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </Button>
+              </div>
+
+              {/* Prompts in folder */}
+              {folderPrompts.length > 0 ? (
+                <div className={
+                  viewMode === 'grid' 
+                    ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'
+                    : 'space-y-2'
+                }>
+                  {folderPrompts.map((prompt) => (
+                    <PromptCard key={prompt.id} prompt={prompt} viewMode={viewMode} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  No prompts in this folder yet
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Create Folder Modal */}
+      <CreateFolderModal
+        open={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreate={(name) => createFolder.mutate(name)}
+      />
+
+      {/* Edit Folder Modal */}
+      {editingFolder && (
+        <EditFolderModal
+          folder={editingFolder}
+          open={!!editingFolder}
+          onClose={() => setEditingFolder(null)}
+          onSave={(name) => updateFolder.mutate({ id: editingFolder.id, name })}
+        />
+      )}
+    </div>
+  );
+};
+
+// Folder Card Component
+const FolderCard = ({ folder, viewMode, onOpen, onEdit, onDelete }) => {
+  if (viewMode === 'grid') {
+    return (
+      <div className="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer">
+        <div className="flex items-start justify-between">
+          <div className="flex-1" onClick={onOpen}>
+            <div className="flex items-center gap-2 mb-2">
+              <Folder className="w-5 h-5 text-blue-500" />
+              <h3 className="font-semibold">{folder.name}</h3>
+            </div>
+            <p className="text-sm text-gray-500">
+              {folder.promptCount || 0} prompts
+            </p>
+          </div>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm">
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onOpen}>
+                <FolderOpen className="w-4 h-4 mr-2" />
+                Open
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onEdit}>
+                <Edit2 className="w-4 h-4 mr-2" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onDelete} className="text-red-600">
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    );
+  }
+  
+  // List view
+  return (
+    <div className="border rounded-lg p-3 hover:shadow-md transition-shadow flex items-center justify-between">
+      <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={onOpen}>
+        <Folder className="w-5 h-5 text-blue-500" />
+        <div className="flex-1">
+          <h3 className="font-semibold">{folder.name}</h3>
+        </div>
+        <span className="text-sm text-gray-500">{folder.promptCount || 0} prompts</span>
+      </div>
+      
+      <div className="flex items-center gap-1">
+        <Button variant="ghost" size="sm" onClick={onEdit}>
+          <Edit2 className="w-4 h-4" />
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onDelete}>
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+```
+
+## CHANGE 3: Add Folder Routes
+
+Update the router to include the new folders page.
+
+```tsx
+// App.tsx or router configuration
+import { Route, Switch } from 'wouter';
+import { FoldersPage } from './pages/Folders';
+
+<Switch>
+  <Route path="/prompts" component={PromptsPage} />
+  <Route path="/favorites" component={FavoritesPage} />
+  <Route path="/folders" component={FoldersPage} /> {/* NEW ROUTE */}
+  <Route path="/templates" component={TemplatesPage} />
+  <Route path="/trash" component={TrashPage} />
+</Switch>
+```
+
+## CHANGE 4: Backend API Updates
+
+Ensure the backend has the necessary endpoints for folder operations.
+
+```typescript
+// server/routes.ts - Add/verify these endpoints exist
+
+// GET /api/folders - Get all folders for user
+app.get('/api/folders', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const folders = await db.select({
+      id: folders.id,
+      name: folders.name,
+      createdAt: folders.createdAt,
+      promptCount: sql`(SELECT COUNT(*) FROM prompts WHERE folder_id = folders.id)`
+    })
+    .from(folders)
+    .where(eq(folders.userId, userId))
+    .orderBy(folders.name);
+    
+    res.json(folders);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch folders' });
+  }
+});
+
+// GET /api/folders/:id/prompts - Get prompts in a folder
+app.get('/api/folders/:id/prompts', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    const prompts = await db.select()
+      .from(prompts)
+      .where(and(
+        eq(prompts.folderId, id),
+        eq(prompts.userId, userId),
+        isNull(prompts.trashedAt)
+      ))
+      .orderBy(desc(prompts.createdAt));
+    
+    res.json(prompts);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch folder prompts' });
+  }
+});
+
+// POST /api/folders - Create new folder
+app.post('/api/folders', authenticateToken, async (req, res) => {
+  try {
+    const { name, parentId } = req.body;
+    const userId = req.user.id;
+    
+    const [newFolder] = await db.insert(folders).values({
+      id: crypto.randomUUID(),
+      userId,
+      name,
+      parentId: parentId || null,
+      createdAt: new Date()
+    }).returning();
+    
+    res.status(201).json(newFolder);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create folder' });
+  }
+});
+
+// PUT /api/folders/:id - Update folder
+app.put('/api/folders/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+    const userId = req.user.id;
+    
+    const [updated] = await db.update(folders)
+      .set({ name })
+      .where(and(
+        eq(folders.id, id),
+        eq(folders.userId, userId)
+      ))
+      .returning();
+    
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update folder' });
+  }
+});
+
+// DELETE /api/folders/:id - Delete folder
+app.delete('/api/folders/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    // Remove folder reference from prompts
+    await db.update(prompts)
+      .set({ folderId: null })
+      .where(eq(prompts.folderId, id));
+    
+    // Delete the folder
+    await db.delete(folders)
+      .where(and(
+        eq(folders.id, id),
+        eq(folders.userId, userId)
+      ));
+    
+    res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete folder' });
+  }
+});
+```
+
+## Verification Checklist
+
+After implementation:
+
+1. ✅ **Sidebar navigation reordered**: All Prompts → Favorites → Folders → Templates → Trash
+2. ✅ **Folders section removed** from sidebar (no nested folder list)
+3. ✅ **New Folders page created** at `/folders` route
+4. ✅ **Folders page features**:
+   - View all folders in grid or list view
+   - Create new folders
+   - Edit/rename folders
+   - Delete folders
+   - Click into folder to see prompts
+   - Breadcrumb navigation
+5. ✅ **Consistent UI/UX** with other pages (same header, layout, styling)
+6. ✅ **Backend API** supports all folder operations
+
+## Testing
+
+```javascript
+// Verify navigation order
+const navItems = document.querySelectorAll('nav a');
+console.log('Nav order:', Array.from(navItems).map(a => a.textContent));
+// Should be: ["All Prompts", "Favorites", "Folders", "Templates", "Trash"]
+
+// Verify folders section removed from sidebar
+const folderSection = document.querySelector('[data-section="folders"]');
+console.log('Folder section in sidebar:', folderSection); // Should be null
+
+// Test folders page route
+window.location.href = '/folders';
+// Should load the new folders management page
+```
