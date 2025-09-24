@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Template, TemplateVariable, insertTemplateSchema, insertTemplateVariableSchema } from '@shared/schema';
 import { apiRequest } from '@/lib/queryClient';
+import { AuthService } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -36,11 +37,21 @@ export type InstantiateTemplateData = {
   title?: string;
 };
 
-// Get all templates
+// Get all templates  
 export function useTemplates() {
   const { isAuthenticated } = useAuth();
   return useQuery<TemplateWithVariables[]>({
     queryKey: ['/api/templates'],
+    queryFn: async () => {
+      const response = await fetch('/api/templates', {
+        headers: {
+          ...AuthService.getAuthHeaders()
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch templates');
+      const data = await response.json();
+      return data.templates || []; // Extract templates array from response
+    },
     staleTime: 1000 * 60 * 5, // 5 minutes
     enabled: isAuthenticated,
   });
