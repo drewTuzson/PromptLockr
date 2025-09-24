@@ -828,9 +828,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { userId } = requireAuth(req);
       const { title, description, content, category, tags, variables } = req.body;
       
+      console.log('[TEMPLATE CREATE] Starting template creation for userId:', userId);
+      console.log('[TEMPLATE CREATE] Request body:', { title, description, content, category, tags, variables });
+      
       // Validate template content
       const validation = templateEngine.validateTemplate(content);
+      console.log('[TEMPLATE CREATE] Template validation result:', validation);
       if (!validation.valid) {
+        console.log('[TEMPLATE CREATE] Template validation failed:', validation.errors);
         return res.status(400).json({ 
           message: 'Invalid template', 
           errors: validation.errors 
@@ -839,6 +844,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Parse variables from content
       const detectedVars = templateEngine.parseVariables(content);
+      console.log('[TEMPLATE CREATE] Detected variables from content:', detectedVars);
       
       const templateData = {
         userId,
@@ -850,19 +856,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isPublic: false
       };
 
+      console.log('[TEMPLATE CREATE] Template data prepared:', templateData);
+
       // Validate template data
       const validationResult = insertTemplateSchema.safeParse(templateData);
+      console.log('[TEMPLATE CREATE] Schema validation result:', validationResult.success);
       if (!validationResult.success) {
+        console.log('[TEMPLATE CREATE] Schema validation failed:', validationResult.error.issues);
         return res.status(400).json({ 
           message: 'Invalid template data',
           errors: validationResult.error.issues
         });
       }
       
+      console.log('[TEMPLATE CREATE] Validated template data:', validationResult.data);
+      
       // Create template and variables in a transaction
+      console.log('[TEMPLATE CREATE] Inserting template into database...');
       const [template] = await drizzleDB.insert(templates)
         .values(validationResult.data)
         .returning();
+      
+      console.log('[TEMPLATE CREATE] Template inserted successfully:', template);
       
       // Create template variables if provided
       if (variables && Array.isArray(variables)) {

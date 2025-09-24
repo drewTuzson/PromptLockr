@@ -42,13 +42,16 @@ export function useTemplates() {
   const { isAuthenticated } = useAuth();
   return useQuery<TemplateWithVariables[]>({
     queryKey: ['/api/templates'],
-    queryFn: async () => {
-      const response = await fetch('/api/templates', {
+    queryFn: async ({ queryKey }) => {
+      const response = await fetch(queryKey.join("/") as string, {
         headers: {
-          ...AuthService.getAuthHeaders()
-        }
+          ...AuthService.getAuthHeaders(),
+        },
+        credentials: "include",
       });
-      if (!response.ok) throw new Error('Failed to fetch templates');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch templates: ${response.status} ${response.statusText}`);
+      }
       const data = await response.json();
       return data.templates || []; // Extract templates array from response
     },
