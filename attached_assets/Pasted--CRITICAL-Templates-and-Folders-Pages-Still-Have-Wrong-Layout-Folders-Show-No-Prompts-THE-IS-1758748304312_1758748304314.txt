@@ -1,0 +1,402 @@
+# CRITICAL: Templates and Folders Pages Still Have Wrong Layout + Folders Show No Prompts
+
+## THE ISSUES ARE NOT FIXED - VISUAL PROOF
+
+**Issue 1 - Layout Inconsistency:**
+- **All Prompts page (correct)**: Has PromptLockr logo on left, search bar on right next to user profile
+- **Templates page (wrong)**: Different header structure - not matching All Prompts
+- **Folders page (wrong)**: Different header structure - not matching All Prompts
+
+**Issue 2 - Folders Show No Prompts:**
+- Folders page shows: Agents (1 prompt), Midjourney (4 prompts)  
+- When clicked: "No prompts in this folder yet" - DATA IS NOT LOADING
+
+## CRITICAL DEBUGGING - RUN THESE COMMANDS FIRST
+
+```javascript
+// 1. Check what header component All Prompts uses
+// On All Prompts page, run:
+console.log('All Prompts header HTML:');
+console.log(document.querySelector('header')?.outerHTML);
+
+// 2. Check what header component Templates uses
+// On Templates page, run:
+console.log('Templates header HTML:');
+console.log(document.querySelector('header')?.outerHTML);
+
+// 3. They are DIFFERENT - This is the problem
+```
+
+## ISSUE 1 FIX: Force All Pages to Use EXACT Same Layout
+
+### STEP 1: Find the Correct Layout Used by All Prompts
+
+```bash
+# Open these files and compare:
+# 1. pages/Prompts.tsx or AllPrompts.tsx - THIS HAS THE CORRECT LAYOUT
+# 2. pages/Templates.tsx - THIS HAS THE WRONG LAYOUT
+# 3. pages/Folders.tsx - THIS HAS THE WRONG LAYOUT
+```
+
+### STEP 2: The All Prompts Page Structure (CORRECT)
+
+```tsx
+// pages/Prompts.tsx - THIS IS WHAT WORKS
+export const PromptsPage = () => {
+  return (
+    <div className="flex h-screen bg-background">
+      {/* Sidebar */}
+      <Sidebar />
+      
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Header with Logo, Search, and User */}
+        <header className="h-16 border-b bg-background px-6 flex items-center justify-between">
+          <div className="flex items-center">
+            <h1 className="text-xl font-bold">PromptLockr</h1>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="relative w-80">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                type="text"
+                placeholder="Search prompts, tags, or content..."
+                className="pl-10 w-full"
+              />
+            </div>
+            <UserMenu />
+          </div>
+        </header>
+        
+        {/* Page Content */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {/* Page specific content */}
+        </main>
+      </div>
+    </div>
+  );
+};
+```
+
+### STEP 3: FORCE Templates to Use EXACT Same Structure
+
+```tsx
+// pages/Templates.tsx - MUST BE EXACTLY LIKE ALL PROMPTS
+export const TemplatesPage = () => {
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  
+  return (
+    <div className="flex h-screen bg-background">
+      {/* Sidebar - EXACT SAME AS ALL PROMPTS */}
+      <Sidebar />
+      
+      {/* Main Content Area - EXACT SAME STRUCTURE */}
+      <div className="flex-1 flex flex-col">
+        {/* Header - MUST BE IDENTICAL TO ALL PROMPTS */}
+        <header className="h-16 border-b bg-background px-6 flex items-center justify-between">
+          <div className="flex items-center">
+            <h1 className="text-xl font-bold">PromptLockr</h1>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="relative w-80">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                type="text"
+                placeholder="Search templates, tags, or content..."
+                className="pl-10 w-full"
+              />
+            </div>
+            <UserMenu />
+          </div>
+        </header>
+        
+        {/* Templates Content */}
+        <main className="flex-1 overflow-y-auto p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold">Templates</h1>
+              <p className="text-gray-500">Create reusable templates with variables for consistent prompts</p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <div className="flex rounded-lg border">
+                <Button
+                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('grid')}
+                  className="rounded-r-none"
+                >
+                  <Grid className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'list' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('list')}
+                  className="rounded-l-none"
+                >
+                  <List className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              <Button onClick={() => setIsCreateModalOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Template
+              </Button>
+            </div>
+          </div>
+          
+          {/* Templates list/grid here */}
+        </main>
+      </div>
+    </div>
+  );
+};
+```
+
+### STEP 4: FORCE Folders to Use EXACT Same Structure
+
+```tsx
+// pages/Folders.tsx - MUST BE EXACTLY LIKE ALL PROMPTS
+export const FoldersPage = () => {
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  
+  return (
+    <div className="flex h-screen bg-background">
+      {/* Sidebar - EXACT SAME AS ALL PROMPTS */}
+      <Sidebar />
+      
+      {/* Main Content Area - EXACT SAME STRUCTURE */}
+      <div className="flex-1 flex flex-col">
+        {/* Header - MUST BE IDENTICAL TO ALL PROMPTS */}
+        <header className="h-16 border-b bg-background px-6 flex items-center justify-between">
+          <div className="flex items-center">
+            <h1 className="text-xl font-bold">PromptLockr</h1>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="relative w-80">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                type="text"
+                placeholder="Search folders or prompts..."
+                className="pl-10 w-full"
+              />
+            </div>
+            <UserMenu />
+          </div>
+        </header>
+        
+        {/* Folders Content */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {/* Breadcrumb for folder navigation */}
+          {selectedFolder && (
+            <div className="flex items-center gap-2 mb-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedFolder(null)}
+              >
+                ← Folders
+              </Button>
+              <span>/</span>
+              <span className="font-medium">{selectedFolder.name}</span>
+            </div>
+          )}
+          
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold">
+                {selectedFolder ? selectedFolder.name : 'Folders'}
+              </h1>
+              <p className="text-gray-500">
+                {selectedFolder 
+                  ? `${selectedFolder.promptCount || 0} prompts in this folder`
+                  : 'Organize your prompts into folders'
+                }
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Controls here */}
+            </div>
+          </div>
+          
+          {/* Folders or folder contents here */}
+        </main>
+      </div>
+    </div>
+  );
+};
+```
+
+## ISSUE 2 FIX: Folders Not Showing Prompts
+
+The database query is broken. Agents folder shows "1 prompt" but displays nothing when opened.
+
+### FIX Backend API - The Field Names Are Wrong
+
+```typescript
+// server/routes.ts - THE FIELD NAMES ARE CRITICAL
+
+// WRONG - This is probably what you have:
+const prompts = await db.select()
+  .from(prompts)
+  .where(eq(prompts.folder_id, id)); // WRONG FIELD NAME
+
+// CORRECT - Check your database schema for exact field name:
+const prompts = await db.select()
+  .from(prompts)
+  .where(eq(prompts.folderId, id)); // or folder_id - CHECK YOUR SCHEMA
+
+// Complete fixed endpoint:
+app.get('/api/folders/:id/prompts', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    // LOG EVERYTHING FOR DEBUGGING
+    console.log('=== FOLDER PROMPTS REQUEST ===');
+    console.log('Folder ID:', id);
+    console.log('User ID:', userId);
+    
+    // First check if folder exists
+    const folder = await db.select()
+      .from(folders)
+      .where(and(
+        eq(folders.id, id),
+        eq(folders.userId, userId)
+      ))
+      .limit(1);
+    
+    console.log('Folder found:', folder);
+    
+    if (!folder.length) {
+      console.log('Folder not found');
+      return res.status(404).json({ error: 'Folder not found' });
+    }
+    
+    // Get prompts - CHECK YOUR EXACT FIELD NAMES
+    const query = db.select()
+      .from(prompts)
+      .where(and(
+        eq(prompts.folderId, id), // CHECK: Is it folderId or folder_id?
+        eq(prompts.userId, userId),
+        isNull(prompts.trashedAt) // CHECK: Is it trashedAt or trashed_at?
+      ));
+    
+    console.log('Query SQL:', query.toSQL());
+    
+    const folderPrompts = await query;
+    
+    console.log('Prompts found:', folderPrompts.length);
+    console.log('First prompt:', folderPrompts[0]);
+    
+    res.json(folderPrompts);
+    
+  } catch (error) {
+    console.error('ERROR:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+### FIX Frontend - Ensure Correct Data Flow
+
+```tsx
+// pages/Folders.tsx - Debug the data flow
+
+const FoldersPage = () => {
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  
+  // Fetch folder prompts with debugging
+  const { data: folderPrompts = [], isLoading, error } = useQuery({
+    queryKey: ['folder-prompts', selectedFolder?.id],
+    queryFn: async () => {
+      if (!selectedFolder?.id) return [];
+      
+      console.log('Fetching prompts for folder:', selectedFolder);
+      
+      const response = await fetch(`/api/folders/${selectedFolder.id}/prompts`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Error response:', error);
+        throw new Error('Failed to fetch folder prompts');
+      }
+      
+      const prompts = await response.json();
+      console.log('Received prompts:', prompts);
+      
+      return prompts;
+    },
+    enabled: !!selectedFolder?.id
+  });
+  
+  // Display the prompts
+  if (selectedFolder) {
+    console.log('Rendering folder:', selectedFolder);
+    console.log('Folder prompts:', folderPrompts);
+    
+    return (
+      <div>
+        {folderPrompts.length > 0 ? (
+          <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-2'}>
+            {folderPrompts.map(prompt => (
+              <PromptCard key={prompt.id} prompt={prompt} viewMode={viewMode} />
+            ))}
+          </div>
+        ) : (
+          <div>No prompts in this folder yet</div>
+        )}
+      </div>
+    );
+  }
+};
+```
+
+### CHECK DATABASE SCHEMA
+
+```sql
+-- Run this query to check your exact column names:
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'prompts';
+
+-- Check if prompts have folder associations:
+SELECT p.id, p.title, p.folder_id, f.name as folder_name
+FROM prompts p
+LEFT JOIN folders f ON p.folder_id = f.id
+WHERE p.user_id = '[your-user-id]';
+
+-- Check specific folder:
+SELECT * FROM prompts 
+WHERE folder_id = '[folder-id-here]';
+```
+
+## VERIFICATION AFTER FIX
+
+1. **All pages must have identical header structure**
+   - Logo on left
+   - Search bar on right
+   - User menu on far right
+
+2. **Folders must show their prompts**
+   - Click Agents folder → see 1 prompt
+   - Click Midjourney folder → see 4 prompts
+
+## DO NOT CLAIM THIS IS FIXED UNLESS:
+1. Templates page header looks EXACTLY like All Prompts header
+2. Folders page header looks EXACTLY like All Prompts header  
+3. Clicking on folders actually shows the prompts inside them
+
+**THE PREVIOUS FIXES DID NOT WORK. USE THIS EXACT CODE.**
