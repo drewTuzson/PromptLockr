@@ -244,7 +244,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId
       });
       
-      const newPrompt = await storage.createPrompt(promptData);
+      // Use PostgreSQL (Drizzle) instead of ReplitDB to match the GET endpoint
+      const [newPrompt] = await drizzleDB
+        .insert(prompts)
+        .values(promptData)
+        .returning();
+      
       res.status(201).json(newPrompt);
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
