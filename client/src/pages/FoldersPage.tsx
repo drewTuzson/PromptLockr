@@ -48,7 +48,10 @@ import { useFolders, useCreateFolder, useUpdateFolder, useDeleteFolder } from '@
 import { usePrompts } from '@/hooks/usePrompts';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
+import { AuthService } from '@/lib/auth';
 import { cn } from '@/lib/utils';
+import { PageLayout } from '@/components/ui/page-layout';
+import { MobileLayout } from '@/components/ui/mobile-layout';
 import type { Folder, Prompt } from '@shared/schema';
 
 interface FolderCardProps {
@@ -359,13 +362,26 @@ export default function FoldersPage() {
     queryKey: ['/api/prompts', 'folder', selectedFolder?.id],
     queryFn: async (): Promise<Prompt[]> => {
       if (!selectedFolder) return [];
-      const res = await fetch(`/api/prompts?folderId=${selectedFolder.id}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+      
+      console.log('Fetching prompts for folder ID:', selectedFolder.id);
+      
+      const res = await fetch(`/api/prompts?folders=${selectedFolder.id}`, {
+        headers: AuthService.getAuthHeaders()
       });
-      if (!res.ok) throw new Error('Failed to fetch folder prompts');
-      return res.json();
+      
+      if (!res.ok) {
+        console.error('Failed to fetch prompts:', res.status);
+        throw new Error('Failed to fetch folder prompts');
+      }
+      
+      const result = await res.json();
+      console.log('Received result:', result);
+      
+      // Handle both the advanced filtering response and simple response
+      if (result.prompts) {
+        return result.prompts;
+      }
+      return result;
     },
     enabled: !!selectedFolder
   });
@@ -432,119 +448,51 @@ export default function FoldersPage() {
 
   return (
     <RequireAuth>
-      <div className="min-h-screen bg-background">
-        {/* Header - Same as Dashboard */}
-        <header className="bg-card border-b border-border shadow-sm sticky top-0 z-40">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center space-x-4">
-              <Button
-                data-testid="button-sidebar-toggle"
-                variant="ghost"
-                size="sm"
-                className="lg:hidden p-2"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-              >
-                <Menu className="w-5 h-5" />
-              </Button>
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-primary-foreground" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2L3.09 8.26L12 14L20.91 8.26L12 2Z"/>
-                    <path d="M3.09 15.74L12 22L20.91 15.74L12 9.48L3.09 15.74Z"/>
-                  </svg>
-                </div>
-                <h1 className="text-xl font-bold text-foreground">PromptLockr</h1>
-              </div>
-            </div>
+      <MobileLayout
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search folders or prompts..."
+      >
 
-            {/* Header Actions - Search Bar and User Menu */}
-            <div className="flex items-center space-x-4">
-              {/* Search Bar */}
-              <div className="relative w-80">
-                <SearchBar
-                  onSearch={setSearchQuery}
-                  placeholder="Search folders or prompts..."
-                  className="w-full"
-                />
-              </div>
-              
-              {/* User Menu */}
-              <Link to="/settings" className="cursor-pointer">
-                <div 
-                  data-testid="link-profile-settings"
-                  className="w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:opacity-90 transition-opacity"
-                >
-                  <span className="text-sm font-medium text-primary-foreground">U</span>
-                </div>
-              </Link>
-            </div>
-          </div>
-        </header>
-
-        <div className="flex">
-          {/* Sidebar */}
-          <Sidebar
-            onCreatePrompt={handleCreatePrompt}
-            onImport={handleImport}
-            className={cn(
-              "lg:translate-x-0 fixed lg:relative z-30",
-              sidebarOpen ? "translate-x-0" : "-translate-x-full"
-            )}
-          />
-
-          {/* Mobile Sidebar Overlay */}
-          {sidebarOpen && (
-            <div 
-              className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"
-              onClick={() => setSidebarOpen(false)}
-            />
-          )}
-
-          {/* Main Content */}
-          <main className="flex-1 overflow-y-auto p-6">
-            {!selectedFolder ? (
-              // Show all folders
-              <>
-                {/* Page Header */}
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h1 className="text-2xl font-bold text-foreground">Folders</h1>
-                    <p className="text-muted-foreground">Organize your prompts into folders</p>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    {/* View Toggle */}
-                    <div className="flex rounded-lg border border-border">
-                      <Button
-                        variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => setViewMode('grid')}
-                        className="rounded-r-none"
-                        data-testid="button-view-grid"
-                      >
-                        <Grid className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant={viewMode === 'list' ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => setViewMode('list')}
-                        className="rounded-l-none"
-                        data-testid="button-view-list"
-                      >
-                        <List className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    
-                    {/* Create Folder Button */}
+          {!selectedFolder ? (
+            <PageLayout
+              title="Folders"
+              description="Organize your prompts into folders"
+              controls={
+                <>
+                  {/* View Toggle */}
+                  <div className="flex rounded-lg border border-border">
                     <Button
-                      onClick={() => setIsCreateModalOpen(true)}
-                      data-testid="button-new-folder"
+                      variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className="rounded-r-none"
+                      data-testid="button-view-grid"
                     >
-                      <Plus className="w-4 h-4 mr-2" />
-                      New Folder
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant={viewMode === 'list' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className="rounded-l-none"
+                      data-testid="button-view-list"
+                    >
+                      <List className="w-4 h-4" />
                     </Button>
                   </div>
-                </div>
+                  
+                  {/* Create Folder Button */}
+                  <Button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    data-testid="button-new-folder"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    New Folder
+                  </Button>
+                </>
+              }
+            >
 
                 {/* Folders Display */}
                 {foldersLoading ? (
@@ -595,78 +543,69 @@ export default function FoldersPage() {
                     )}
                   </div>
                 )}
-              </>
-            ) : (
-              // Show folder contents
-              <>
-                {/* Breadcrumb */}
-                <div className="flex items-center gap-2 mb-4">
+            </PageLayout>
+          ) : (
+            <PageLayout
+              title={selectedFolder.name}
+              description={`${folderPrompts.length} ${folderPrompts.length === 1 ? 'prompt' : 'prompts'} in this folder`}
+              backButton={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedFolder(null)}
+                  data-testid="button-back-to-folders"
+                  className="flex items-center space-x-2"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Folders</span>
+                </Button>
+              }
+              controls={
+                <>
+                  {/* View Toggle */}
+                  <div className="flex rounded-lg border border-border">
+                    <Button
+                      variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className="rounded-r-none"
+                      data-testid="button-view-grid"
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant={viewMode === 'list' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className="rounded-l-none"
+                      data-testid="button-view-list"
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  {/* Folder Actions */}
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    onClick={() => setSelectedFolder(null)}
-                    data-testid="button-back-to-folders"
+                    onClick={() => setEditingFolder(selectedFolder)}
+                    data-testid="button-rename-folder"
                   >
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    Folders
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    Rename
                   </Button>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-medium text-foreground">{selectedFolder.name}</span>
-                </div>
-
-                {/* Folder Header */}
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h1 className="text-2xl font-bold text-foreground">{selectedFolder.name}</h1>
-                    <p className="text-muted-foreground">
-                      {folderPrompts.length} {folderPrompts.length === 1 ? 'prompt' : 'prompts'} in this folder
-                    </p>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    {/* View Toggle */}
-                    <div className="flex rounded-lg border border-border">
-                      <Button
-                        variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => setViewMode('grid')}
-                        className="rounded-r-none"
-                        data-testid="button-view-grid"
-                      >
-                        <Grid className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant={viewMode === 'list' ? 'default' : 'ghost'}
-                        size="sm"
-                        onClick={() => setViewMode('list')}
-                        className="rounded-l-none"
-                        data-testid="button-view-list"
-                      >
-                        <List className="w-4 h-4" />
-                      </Button>
-                    </div>
-
-                    {/* Folder Actions */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setEditingFolder(selectedFolder)}
-                      data-testid="button-rename-folder"
-                    >
-                      <Edit2 className="w-4 h-4 mr-2" />
-                      Rename
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setFolderToDelete(selectedFolder)}
-                      data-testid="button-delete-folder"
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete
-                    </Button>
-                  </div>
-                </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFolderToDelete(selectedFolder)}
+                    data-testid="button-delete-folder"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                </>
+              }
+            >
 
                 {/* Prompts in folder */}
                 {folderPromptsLoading ? (
@@ -688,10 +627,8 @@ export default function FoldersPage() {
                     {searchQuery ? 'No prompts found matching your search.' : 'No prompts in this folder yet'}
                   </div>
                 )}
-              </>
-            )}
-          </main>
-        </div>
+            </PageLayout>
+          )}
 
         {/* Create Folder Modal */}
         <CreateFolderModal
@@ -735,7 +672,7 @@ export default function FoldersPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </div>
+      </MobileLayout>
     </RequireAuth>
   );
 }

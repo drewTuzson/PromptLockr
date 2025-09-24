@@ -1,0 +1,581 @@
+# Fix Folders Display, UI Consistency, and Mobile Responsiveness
+
+Three critical issues need fixing:
+1. **Folders show prompt counts but display no prompts when opened**
+2. **UI inconsistency between pages** - Folders and Templates pages have incorrect spacing/layout
+3. **Mobile version has overlapping elements and poor UX**
+
+**Technical Context:**
+- Frontend: React 18.3.1 + TypeScript + Vite
+- UI Components: Radix UI + Tailwind CSS
+- Database: PostgreSQL with Drizzle ORM
+
+## ISSUE 1: Fix Folders Not Displaying Prompts
+
+The folder shows "4 prompts" but displays "No prompts in this folder yet" when opened. This is likely a query or ID mismatch issue.
+
+### Debug and Fix Backend API
+
+```typescript
+// server/routes.ts - Fix the folder prompts endpoint
+
+// GET /api/folders/:id/prompts - FIXED VERSION
+app.get('/api/folders/:id/prompts', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    console.log('Fetching prompts for folder:', id, 'user:', userId);
+    
+    // First verify the folder exists and belongs to user
+    const folder = await db.select()
+      .from(folders)
+      .where(and(
+        eq(folders.id, id),
+        eq(folders.userId, userId)
+      ))
+      .limit(1);
+    
+    if (!folder.length) {
+      return res.status(404).json({ error: 'Folder not found' });
+    }
+    
+    // Now get prompts - ensure we're checking the correct field
+    const folderPrompts = await db.select()
+      .from(prompts)
+      .where(and(
+        eq(prompts.folderId, id),
+        eq(prompts.userId, userId),
+        isNull(prompts.trashedAt)
+      ));
+    
+    console.log('Found prompts:', folderPrompts.length);
+    res.json(folderPrompts);
+    
+  } catch (error) {
+    console.error('Error fetching folder prompts:', error);
+    res.status(500).json({ error: 'Failed to fetch folder prompts' });
+  }
+});
+
+// Also verify the folder count is correct
+app.get('/api/folders', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const foldersWithCounts = await db.select({
+      id: folders.id,
+      name: folders.name,
+      createdAt: folders.createdAt,
+      promptCount: sql`(
+        SELECT COUNT(*) 
+        FROM prompts 
+        WHERE prompts.folder_id = folders.id 
+        AND prompts.user_id = ${userId}
+        AND prompts.trashed_at IS NULL
+      )`.as('promptCount')
+    })
+    .from(folders)
+    .where(eq(folders.userId, userId))
+    .orderBy(folders.name);
+    
+    console.log('Folders with counts:', foldersWithCounts);
+    res.json(foldersWithCounts);
+    
+  } catch (error) {
+    console.error('Error fetching folders:', error);
+    res.status(500).json({ error: 'Failed to fetch folders' });
+  }
+});
+```
+
+### Fix Frontend Folder Display
+
+```tsx
+// pages/Folders.tsx - Fix the folder prompts query
+
+const FoldersPage = () => {
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  
+  // Fix: Ensure we're passing the correct folder ID
+  const { data: folderPrompts = [], isLoading: promptsLoading } = useQuery({
+    queryKey: ['folder-prompts', selectedFolder?.id],
+    queryFn: async () => {
+      if (!selectedFolder?.id) return [];
+      
+      console.log('Fetching prompts for folder ID:', selectedFolder.id);
+      
+      const response = await fetch(`/api/folders/${selectedFolder.id}/prompts`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to fetch prompts:', response.status);
+        throw new Error('Failed to fetch folder prompts');
+      }
+      
+      const prompts = await response.json();
+      console.log('Received prompts:', prompts.length);
+      return prompts;
+    },
+    enabled: !!selectedFolder?.id,
+    refetchOnMount: true
+  });
+  
+  // Rest of component...
+};
+```
+
+## ISSUE 2: Fix UI Consistency - Proper Spacing and Layout
+
+The Folders and Templates pages need the same header spacing and control layout as All Prompts.
+
+### Create Consistent Page Layout Component
+
+```tsx
+// components/PageLayout.tsx - Standardized layout for all content pages
+
+interface PageLayoutProps {
+  title: string;
+  description: string;
+  controls?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+export const PageLayout = ({ title, description, controls, children }: PageLayoutProps) => {
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {/* Consistent padding and spacing for all pages */}
+      <div className="p-6">
+        {/* Page Header - Same structure as All Prompts */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">{title}</h1>
+            <p className="text-gray-500">{description}</p>
+          </div>
+          
+          {controls && (
+            <div className="flex items-center gap-2">
+              {controls}
+            </div>
+          )}
+        </div>
+        
+        {/* Page Content */}
+        {children}
+      </div>
+    </div>
+  );
+};
+```
+
+### Update Folders Page with Consistent Layout
+
+```tsx
+// pages/Folders.tsx - Use consistent layout
+
+export const FoldersPage = () => {
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState(null);
+  
+  return (
+    <div className="flex h-screen bg-background">
+      {/* Sidebar */}
+      <Sidebar />
+      
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Header - Same component as All Prompts */}
+        <Header />
+        
+        {/* Use PageLayout for consistency */}
+        <PageLayout
+          title={selectedFolder ? selectedFolder.name : "Folders"}
+          description={selectedFolder ? `${folderPrompts.length} prompts in this folder` : "Organize your prompts into folders"}
+          controls={
+            <>
+              {selectedFolder && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedFolder(null)}
+                >
+                  ← Back to Folders
+                </Button>
+              )}
+              
+              {/* View Toggle */}
+              <div className="flex rounded-lg border">
+                <Button
+                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('grid')}
+                  className="rounded-r-none"
+                >
+                  <Grid className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'list' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('list')}
+                  className="rounded-l-none"
+                >
+                  <List className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              {/* New Folder Button */}
+              {!selectedFolder && (
+                <Button onClick={() => setIsCreateModalOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Folder
+                </Button>
+              )}
+              
+              {/* Folder Actions */}
+              {selectedFolder && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditingFolder(selectedFolder)}
+                  >
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    Rename
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDeleteFolder(selectedFolder.id)}
+                    className="text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </Button>
+                </>
+              )}
+            </>
+          }
+        >
+          {/* Folder/Prompt content here */}
+        </PageLayout>
+      </div>
+    </div>
+  );
+};
+```
+
+### Update Templates Page with Same Layout
+
+```tsx
+// pages/Templates.tsx - Use consistent layout
+
+export const TemplatesPage = () => {
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  
+  return (
+    <div className="flex h-screen bg-background">
+      <Sidebar />
+      
+      <div className="flex-1 flex flex-col">
+        <Header />
+        
+        <PageLayout
+          title="Templates"
+          description="Create reusable templates with variables for consistent prompts"
+          controls={
+            <>
+              {/* View Toggle */}
+              <div className="flex rounded-lg border">
+                <Button
+                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('grid')}
+                  className="rounded-r-none"
+                >
+                  <Grid className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'list' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('list')}
+                  className="rounded-l-none"
+                >
+                  <List className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              {/* Create Template Button */}
+              <Button onClick={() => setIsCreateModalOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Template
+              </Button>
+            </>
+          }
+        >
+          {/* Templates content */}
+        </PageLayout>
+      </div>
+    </div>
+  );
+};
+```
+
+## ISSUE 3: Mobile Responsiveness
+
+Create a mobile-first experience with proper responsive design.
+
+### Mobile-Responsive Layout Wrapper
+
+```tsx
+// components/MobileLayout.tsx - Mobile-optimized layout
+
+export const ResponsiveLayout = ({ children }) => {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  
+  return (
+    <div className="flex h-screen bg-background">
+      {/* Desktop Sidebar */}
+      <aside className={`
+        ${isMobile ? 'fixed inset-y-0 left-0 z-50 w-64' : 'w-64 border-r'}
+        ${isMobile && !isMobileMenuOpen ? '-translate-x-full' : 'translate-x-0'}
+        transition-transform duration-200 ease-in-out
+        bg-background h-screen
+      `}>
+        {isMobile && (
+          <div className="flex justify-end p-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+        )}
+        <Sidebar />
+      </aside>
+      
+      {/* Mobile Menu Overlay */}
+      {isMobile && isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+      
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header with Mobile Menu Toggle */}
+        <header className="h-14 md:h-16 border-b bg-background px-4 md:px-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {isMobile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="md:hidden"
+              >
+                <Menu className="w-5 h-5" />
+              </Button>
+            )}
+            <h1 className="text-lg md:text-xl font-bold">PromptLockr</h1>
+          </div>
+          
+          {/* Mobile-optimized search and user menu */}
+          <div className="flex items-center gap-2 md:gap-4">
+            {!isMobile && (
+              <div className="relative w-64 lg:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  type="text"
+                  placeholder="Search..."
+                  className="pl-10 w-full"
+                />
+              </div>
+            )}
+            {isMobile && (
+              <Button variant="ghost" size="sm">
+                <Search className="w-5 h-5" />
+              </Button>
+            )}
+            <UserMenu />
+          </div>
+        </header>
+        
+        {/* Content */}
+        {children}
+      </div>
+    </div>
+  );
+};
+```
+
+### Mobile-Optimized Folder Cards
+
+```tsx
+// components/FolderCard.tsx - Responsive folder cards
+
+const FolderCard = ({ folder, viewMode, onOpen, onEdit, onDelete }) => {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  
+  if (viewMode === 'grid') {
+    return (
+      <div className="border rounded-lg p-3 md:p-4 hover:shadow-md transition-shadow">
+        <div className="flex items-start justify-between">
+          <div 
+            className="flex-1 cursor-pointer"
+            onClick={onOpen}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Folder className="w-4 h-4 md:w-5 md:h-5 text-blue-500 flex-shrink-0" />
+              <h3 className="font-semibold text-sm md:text-base truncate">
+                {folder.name}
+              </h3>
+            </div>
+            <p className="text-xs md:text-sm text-gray-500">
+              {folder.promptCount || 0} prompts
+            </p>
+          </div>
+          
+          {/* Mobile-friendly dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size={isMobile ? "sm" : "sm"}
+                className="h-8 w-8"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onClick={onOpen}>
+                <FolderOpen className="w-4 h-4 mr-2" />
+                Open
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onEdit}>
+                <Edit2 className="w-4 h-4 mr-2" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={onDelete} 
+                className="text-red-600"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    );
+  }
+  
+  // List view for mobile
+  return (
+    <div className="border rounded-lg p-3 flex items-center justify-between">
+      <div 
+        className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 cursor-pointer"
+        onClick={onOpen}
+      >
+        <Folder className="w-4 h-4 md:w-5 md:h-5 text-blue-500 flex-shrink-0" />
+        <span className="font-medium text-sm md:text-base truncate">
+          {folder.name}
+        </span>
+        <span className="text-xs md:text-sm text-gray-500 ml-auto">
+          {folder.promptCount}
+        </span>
+      </div>
+      
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <Button 
+          variant="ghost" 
+          size="sm"
+          onClick={onEdit}
+          className="h-8 w-8"
+        >
+          <Edit2 className="w-3 h-3 md:w-4 md:h-4" />
+        </Button>
+        <Button 
+          variant="ghost" 
+          size="sm"
+          onClick={onDelete}
+          className="h-8 w-8"
+        >
+          <Trash2 className="w-3 h-3 md:w-4 md:h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+```
+
+### Global Mobile Styles
+
+```css
+/* Add to global CSS or Tailwind config */
+
+/* Prevent horizontal scroll on mobile */
+@media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+  }
+  
+  /* Ensure modals are properly contained */
+  .modal-content {
+    max-width: calc(100vw - 2rem);
+    margin: 1rem;
+  }
+  
+  /* Responsive grid for folders/prompts */
+  .responsive-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4;
+  }
+  
+  /* Touch-friendly tap targets */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Responsive text sizes */
+.responsive-text-sm {
+  @apply text-xs md:text-sm;
+}
+
+.responsive-text-base {
+  @apply text-sm md:text-base;
+}
+
+.responsive-text-lg {
+  @apply text-base md:text-lg;
+}
+```
+
+## Verification Checklist
+
+1. ✅ **Folders display prompts correctly** when opened
+2. ✅ **UI consistency** - All pages have same header spacing and layout
+3. ✅ **Mobile responsive** - No overlapping elements, proper mobile navigation
+4. ✅ **Touch-friendly** - Adequate tap targets on mobile
+5. ✅ **Consistent spacing** - Proper padding/margins across all pages
+
+## Debug Commands
+
+```javascript
+// Test folder prompts are loading
+const folderId = 'your-folder-id-here';
+fetch(`/api/folders/${folderId}/prompts`, {
+  headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+}).then(r => r.json()).then(console.log);
+
+// Check mobile breakpoint
+console.log('Is mobile:', window.innerWidth <= 768);
+```
