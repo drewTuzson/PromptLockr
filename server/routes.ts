@@ -10,7 +10,7 @@ import { db as drizzleDB } from "./db.js";
 import { prompts } from "@shared/schema";
 import { validateAndSanitizeFilters } from "./utils/filterValidation.js";
 import { buildFilterConditions, buildOrderBy } from "./utils/filterQueryBuilder.js";
-import { sql, eq, and, or, desc, ilike, isNotNull } from "drizzle-orm";
+import { sql, eq, and, or, desc, ilike, isNotNull, isNull } from "drizzle-orm";
 import { claudeService } from "./services/claudeService.js";
 import { templateEngine } from "./services/templateEngine.js";
 
@@ -360,18 +360,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/prompts/:id/restore", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      const existing = await storage.getPrompt(req.params.id);
       
-      if (!existing || existing.userId !== userId) {
-        return res.status(404).json({ message: "Prompt not found" });
+      // Use PostgreSQL for consistency - restore by clearing trashedAt
+      const [updated] = await drizzleDB
+        .update(prompts)
+        .set({ trashedAt: null })
+        .where(
+          and(
+            eq(prompts.id, req.params.id),
+            eq(prompts.userId, userId),
+            isNotNull(prompts.trashedAt) // Only restore items that are actually trashed
+          )!
+        )
+        .returning();
+      
+      if (!updated) {
+        return res.status(404).json({ message: "Prompt not found in trash" });
       }
       
-      const success = await storage.restorePrompt(req.params.id);
-      if (success) {
-        res.json({ message: "Prompt restored successfully" });
-      } else {
-        res.status(500).json({ message: "Failed to restore prompt" });
-      }
+      res.json({ message: "Prompt restored successfully" });
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
         return res.status(401).json({ message: error.message });
@@ -384,18 +391,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/prompts/:id/permanent", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      const existing = await storage.getPrompt(req.params.id);
       
-      if (!existing || existing.userId !== userId) {
+      // Use PostgreSQL for consistency - permanently delete from database
+      const [deleted] = await drizzleDB
+        .delete(prompts)
+        .where(
+          and(
+            eq(prompts.id, req.params.id),
+            eq(prompts.userId, userId)
+          )!
+        )
+        .returning();
+      
+      if (!deleted) {
         return res.status(404).json({ message: "Prompt not found" });
       }
       
-      const success = await storage.permanentlyDeletePrompt(req.params.id);
-      if (success) {
-        res.json({ message: "Prompt permanently deleted" });
-      } else {
-        res.status(500).json({ message: "Failed to permanently delete prompt" });
-      }
+      res.json({ message: "Prompt permanently deleted" });
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
         return res.status(401).json({ message: error.message });
@@ -408,14 +420,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/prompts/:id", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      const prompt = await storage.getPrompt(req.params.id);
       
-      if (!prompt || prompt.userId !== userId) {
+      // Use PostgreSQL for consistency
+      const [prompt] = await drizzleDB
+        .select()
+        .from(prompts)
+        .where(
+          and(
+            eq(prompts.id, req.params.id),
+            eq(prompts.userId, userId)
+          )!
+        )
+        .limit(1);
+      
+      if (!prompt) {
         return res.status(404).json({ message: "Prompt not found" });
       }
       
       // Update last accessed
-      await storage.updatePrompt(req.params.id, { lastAccessed: new Date() });
+      await drizzleDB
+        .update(prompts)
+        .set({ lastAccessed: new Date() })
+        .where(
+          and(
+            eq(prompts.id, req.params.id),
+            eq(prompts.userId, userId)
+          )!
+        );
       
       res.json(prompt);
     } catch (error: any) {
@@ -447,9 +478,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Prompt not found" });
       }
       
-      const updates = req.body;
-      delete updates.userId; // Prevent userId changes
-      delete updates.id; // Prevent id changes
+      // Validate updates using partial schema
+      const updateSchema = insertPromptSchema.partial().omit({ id: true, userId: true });
+      const updates = updateSchema.parse(req.body);
       
       // Always update the updatedAt timestamp for modifications
       updates.updatedAt = new Date();
@@ -470,6 +501,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
         return res.status(401).json({ message: error.message });
       }
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid update data", errors: error.errors });
+      }
       console.error('Error updating prompt:', error);
       res.status(500).json({ message: "Failed to update prompt" });
     }
@@ -478,17 +512,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/prompts/:id", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      console.log('Deleting prompt:', req.params.id, 'for user:', userId);
-      const existing = await storage.getPrompt(req.params.id);
       
-      if (!existing || existing.userId !== userId) {
-        console.log('Prompt not found or not owned by user');
+      // Use PostgreSQL for consistency - soft delete by setting trashedAt
+      const [updated] = await drizzleDB
+        .update(prompts)
+        .set({ trashedAt: new Date() })
+        .where(
+          and(
+            eq(prompts.id, req.params.id),
+            eq(prompts.userId, userId)
+          )!
+        )
+        .returning();
+      
+      if (!updated) {
         return res.status(404).json({ message: "Prompt not found" });
       }
       
-      console.log('Moving prompt to trash:', existing.title);
-      await storage.deletePrompt(req.params.id);
-      console.log('Prompt moved to trash successfully');
       res.json({ message: "Prompt deleted successfully" });
     } catch (error: any) {
       if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
