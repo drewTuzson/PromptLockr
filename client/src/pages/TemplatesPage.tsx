@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { PlusIcon, Grid3X3, List, Menu } from 'lucide-react';
 import { RequireAuth } from '@/components/auth/AuthProvider';
 import { Sidebar } from '@/components/dashboard/Sidebar';
+import { SearchBar } from '@/components/dashboard/SearchBar';
 import { Link } from 'wouter';
 import { cn } from '@/lib/utils';
 
@@ -24,6 +25,20 @@ export default function TemplatesPage() {
   const [instantiatingTemplate, setInstantiatingTemplate] = useState<TemplateWithVariables | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter templates based on search query
+  const filteredTemplates = templates.filter(template => {
+    if (!searchQuery.trim()) return true;
+    
+    const query = searchQuery.toLowerCase().trim();
+    return (
+      template.title.toLowerCase().includes(query) ||
+      template.description?.toLowerCase().includes(query) ||
+      template.content.toLowerCase().includes(query) ||
+      template.tags?.some(tag => tag.toLowerCase().includes(query)) ||
+      template.platform?.toLowerCase().includes(query)
+    );
+  });
 
   const handleTemplateCreated = async (templateData: {
     title: string;
@@ -95,6 +110,15 @@ export default function TemplatesPage() {
               </div>
             </div>
 
+            {/* Search Bar */}
+            <div className="flex items-center space-x-3 flex-1 max-w-md mx-8">
+              <SearchBar
+                onSearch={setSearchQuery}
+                placeholder="Search templates, tags, or content..."
+                className="w-full"
+              />
+            </div>
+
             {/* Header Actions */}
             <div className="flex items-center space-x-3">
               <Link to="/settings" className="cursor-pointer">
@@ -145,6 +169,15 @@ export default function TemplatesPage() {
                   </div>
                 </div>
 
+                {/* Search Bar */}
+                <div className="flex items-center space-x-3 flex-1 max-w-md mx-8">
+                  <SearchBar
+                    onSearch={setSearchQuery}
+                    placeholder="Search templates, tags, or content..."
+                    className="w-full"
+                  />
+                </div>
+
                 {/* Header Actions */}
                 <div className="flex items-center space-x-3">
                   <Link to="/settings" className="cursor-pointer">
@@ -174,7 +207,7 @@ export default function TemplatesPage() {
                 
                 <div className="flex items-center gap-3">
                   {/* View Mode Toggle */}
-                  {templates.length > 0 && (
+                  {filteredTemplates.length > 0 && (
                     <div className="flex items-center border rounded-lg">
                       <Button
                         data-testid="button-view-card"
@@ -214,8 +247,31 @@ export default function TemplatesPage() {
             </div>
           )}
 
-          {/* Empty State */}
-          {!isLoading && templates.length === 0 && (
+          {/* Empty State - No search results */}
+          {!isLoading && filteredTemplates.length === 0 && searchQuery.trim() && (
+            <div className="text-center py-16">
+              <div className="inline-flex flex-col items-center">
+                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                  <PlusIcon className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-medium mb-2 text-foreground">No templates match your search</h3>
+                <p className="text-muted-foreground mb-6 max-w-sm">
+                  Try adjusting your search terms or create a new template.
+                </p>
+                <Button
+                  data-testid="button-create-template-from-search"
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex items-center gap-2"
+                >
+                  <PlusIcon className="w-4 h-4" />
+                  Create Template
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Empty State - No templates at all */}
+          {!isLoading && templates.length === 0 && !searchQuery.trim() && (
             <div className="text-center py-16">
               <div className="inline-flex flex-col items-center">
                 <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
@@ -238,13 +294,16 @@ export default function TemplatesPage() {
           )}
 
           {/* Templates Display */}
-          {!isLoading && templates.length > 0 && (
+          {!isLoading && filteredTemplates.length > 0 && (
             <>
               {/* Templates Count */}
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="px-3 py-1">
-                    {templates.length} template{templates.length !== 1 ? 's' : ''}
+                    {filteredTemplates.length} template{filteredTemplates.length !== 1 ? 's' : ''}
+                    {searchQuery.trim() && templates.length !== filteredTemplates.length && (
+                      <span className="text-muted-foreground ml-1">of {templates.length}</span>
+                    )}
                   </Badge>
                 </div>
               </div>
@@ -254,7 +313,7 @@ export default function TemplatesPage() {
                   data-testid="templates-grid"
                   className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
                 >
-                  {templates.map((template) => (
+                  {filteredTemplates.map((template) => (
                     <TemplateCard
                       key={template.id}
                       template={template}
@@ -274,7 +333,7 @@ export default function TemplatesPage() {
                   data-testid="templates-list" 
                   className="space-y-2"
                 >
-                  {templates.map((template) => (
+                  {filteredTemplates.map((template) => (
                     <div 
                       key={template.id} 
                       className="flex items-center justify-between p-4 bg-card border rounded-lg hover:shadow-sm transition-shadow cursor-pointer group"

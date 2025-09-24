@@ -1,0 +1,299 @@
+## Fix Templates Page UI Layout Consistency
+
+The Templates page has inconsistent UI compared to all other pages in the application. The header bar is different - it's missing the search bar and doesn't match the standard layout used throughout the app.
+
+**Current Problem:**
+- All Prompts page has: Logo on left, search bar in center, user menu on right
+- Templates page has: Different header layout without search bar
+- This breaks the consistent user experience
+
+**Technical Context:**
+- Frontend: React 18.3.1 + TypeScript + Vite
+- The app has a standard header component used on all pages
+- Templates page is not using the same header component or layout
+
+## DIAGNOSIS: Find the Header Component Structure
+
+First, identify how the header is structured on the working pages:
+
+```bash
+# Search for the header component used in Prompts page
+# Look for files like: Header.tsx, AppHeader.tsx, TopBar.tsx, NavigationBar.tsx
+# Find where the search bar is implemented
+```
+
+## THE ISSUE: Templates Page Using Different Layout
+
+The Templates page is either:
+1. Using a different header component
+2. Missing the shared header component entirely  
+3. Using the header but with different props/configuration
+
+## REQUIRED FIX: Use Exact Same Layout Structure
+
+**Find the Layout Used in Prompts Page:**
+
+```tsx
+// Look in Prompts.tsx or PromptsPage.tsx to see the exact structure
+// It likely looks something like this:
+
+export const PromptsPage = () => {
+  return (
+    <div className="flex h-screen bg-background">
+      {/* Sidebar */}
+      <Sidebar />
+      
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Shared Header with Search */}
+        <Header showSearch={true} />
+        
+        {/* Page Content */}
+        <main className="flex-1 overflow-y-auto">
+          {/* Prompts specific content */}
+        </main>
+      </div>
+    </div>
+  );
+};
+```
+
+**Update Templates Page to Use EXACT SAME Structure:**
+
+```tsx
+// Templates.tsx or TemplatesPage.tsx
+// MUST use the exact same layout structure as Prompts page
+
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Plus, Grid, List } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+// Import the SAME components used in Prompts page
+import { Sidebar } from '@/components/Sidebar'; // Same sidebar component
+import { Header } from '@/components/Header';   // Same header component
+// OR it might be called:
+// import { TopBar } from '@/components/TopBar';
+// import { AppHeader } from '@/components/AppHeader';
+
+export const TemplatesPage = () => {
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  
+  const { data: templates = [], isLoading, refetch } = useQuery({
+    queryKey: ['templates'],
+    queryFn: async () => {
+      const response = await fetch('/api/templates', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch templates');
+      return response.json();
+    }
+  });
+
+  // CRITICAL: Use EXACT SAME layout structure as Prompts page
+  return (
+    <div className="flex h-screen bg-background">
+      {/* Sidebar - Same component, same props */}
+      <Sidebar />
+      
+      {/* Main Content Area - Same structure */}
+      <div className="flex-1 flex flex-col">
+        {/* Header - MUST be the same header component with search bar */}
+        <Header /> {/* Use exact same component and props as Prompts page */}
+        
+        {/* Templates Content */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {/* Templates page header */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold">Templates</h1>
+              <p className="text-gray-500">Create reusable templates with variables for consistent prompts</p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* View Toggle */}
+              <div className="flex rounded-lg border">
+                <Button
+                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('grid')}
+                  className="rounded-r-none"
+                >
+                  <Grid className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'list' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('list')}
+                  className="rounded-l-none"
+                >
+                  <List className="w-4 h-4" />
+                </Button>
+              </div>
+              
+              {/* Create Template Button */}
+              <Button onClick={() => setIsCreateModalOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Template
+              </Button>
+            </div>
+          </div>
+
+          {/* Templates Grid/List */}
+          {isLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+          ) : templates.length > 0 ? (
+            <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-4'}>
+              {templates.map((template) => (
+                <TemplateCard key={template.id} template={template} viewMode={viewMode} />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-64">
+              <div className="text-6xl mb-4">📄</div>
+              <h2 className="text-xl font-semibold mb-2">No templates found</h2>
+              <p className="text-gray-500 mb-4">
+                Templates help you create consistent prompts with customizable variables. Get started by creating your first template.
+              </p>
+              <Button onClick={() => setIsCreateModalOpen(true)} size="lg">
+                <Plus className="w-4 h-4 mr-2" />
+                Create Your First Template
+              </Button>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+};
+```
+
+## CHECK THE SHARED HEADER COMPONENT
+
+The Header component should be shared across all pages. Verify it includes the search bar:
+
+```tsx
+// components/Header.tsx or components/TopBar.tsx
+// This should be the SAME component used everywhere
+
+import { Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { UserMenu } from '@/components/UserMenu';
+
+export const Header = () => {
+  return (
+    <header className="h-16 border-b bg-background px-6 flex items-center justify-between">
+      {/* Left side - Logo */}
+      <div className="flex items-center gap-4">
+        <h1 className="text-xl font-bold">PromptLockr</h1>
+      </div>
+      
+      {/* Center - Search Bar */}
+      <div className="flex-1 max-w-xl mx-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Input
+            type="text"
+            placeholder="Search prompts, tags, or content..."
+            className="pl-10 w-full"
+          />
+        </div>
+      </div>
+      
+      {/* Right side - User Menu */}
+      <UserMenu />
+    </header>
+  );
+};
+```
+
+## IF USING A LAYOUT WRAPPER
+
+If the app uses a layout wrapper, ensure Templates uses the SAME wrapper as Prompts:
+
+```tsx
+// App.tsx or main router file
+// Both pages MUST use the same layout wrapper
+
+import { Route, Switch } from 'wouter';
+import { DashboardLayout } from './layouts/DashboardLayout';
+import { PromptsPage } from './pages/Prompts';
+import { TemplatesPage } from './pages/Templates';
+
+// ENSURE both use the same layout
+<Switch>
+  <Route path="/prompts">
+    <DashboardLayout>
+      <PromptsPage />
+    </DashboardLayout>
+  </Route>
+  
+  <Route path="/templates">
+    <DashboardLayout> {/* SAME layout wrapper */}
+      <TemplatesPage />
+    </DashboardLayout>
+  </Route>
+</Switch>
+
+// OR if no wrapper, both should have the same structure internally
+```
+
+## ALTERNATIVE: If Using Different Components
+
+If the components are named differently, find and use the correct ones:
+
+```bash
+# Find the exact component names by searching for:
+# - The component that renders "PromptLockr" logo
+# - The component that renders the search input
+# - The component that contains the sidebar navigation
+
+# Then import those exact components in Templates page
+```
+
+## VERIFICATION CHECKLIST
+
+After implementing the fix, verify:
+
+1. **Logo Position**: PromptLockr logo appears in the same position on both pages
+2. **Search Bar**: Search bar is present and centered in the header on Templates page
+3. **User Menu**: User profile menu appears in the top right on both pages
+4. **Sidebar**: Same sidebar navigation on both pages
+5. **Layout Consistency**: Exact same spacing, colors, and structure
+
+## DEBUG STEPS
+
+If the issue persists, check:
+
+```javascript
+// In browser console, compare the DOM structure
+// On Prompts page:
+document.querySelector('header')?.innerHTML
+
+// On Templates page:
+document.querySelector('header')?.innerHTML
+
+// These should be identical
+```
+
+```typescript
+// Check if Header component receives different props
+// In Header component, add:
+console.log('Header props:', props);
+
+// This will show if Templates page is passing different props
+```
+
+## CRITICAL NOTES
+
+1. **DO NOT create a new header** - Use the existing shared Header component
+2. **DO NOT modify the Header component** - It works correctly on other pages
+3. **ENSURE Templates page imports and uses the exact same components** as Prompts page
+4. **The layout structure must be IDENTICAL** - same divs, same classes, same components
+
+The goal is perfect UI consistency: users should see the exact same header layout (logo, search, user menu) on every page of the application, including the Templates page.
