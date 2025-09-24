@@ -85,9 +85,9 @@ export default function TemplatesPage() {
 
   return (
     <RequireAuth>
-      <div className="flex h-screen bg-background">
-        {/* Navigation Header - Same as Dashboard */}
-        <header className="bg-card border-b border-border shadow-sm sticky top-0 z-40 w-full lg:hidden">
+      <div className="min-h-screen bg-background">
+        {/* Navigation Header - EXACT SAME as Dashboard */}
+        <header className="bg-card border-b border-border shadow-sm sticky top-0 z-40">
           <div className="flex items-center justify-between px-6 py-4">
             <div className="flex items-center space-x-4">
               <Button
@@ -110,7 +110,7 @@ export default function TemplatesPage() {
               </div>
             </div>
 
-            {/* Search Bar */}
+            {/* Search Bar - Always show for templates */}
             <div className="flex items-center space-x-3 flex-1 max-w-md mx-8">
               <SearchBar
                 onSearch={setSearchQuery}
@@ -133,67 +133,27 @@ export default function TemplatesPage() {
           </div>
         </header>
 
-        <div className="flex flex-1">
-          {/* Sidebar - Same as Dashboard */}
+        <div className="flex">
+          {/* Sidebar - EXACT SAME as Dashboard */}
           <Sidebar
             onCreatePrompt={handleCreatePrompt}
             onImport={handleImport}
             className={cn(
               "lg:translate-x-0 fixed lg:relative z-30",
-              sidebarOpen ? "translate-x-0" : "lg:translate-x-0 -translate-x-full"
+              sidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}
           />
 
-          {/* Mobile Sidebar Overlay */}
+          {/* Mobile Sidebar Overlay - EXACT SAME as Dashboard */}
           {sidebarOpen && (
             <div 
-              className="fixed inset-0 bg-black/50 lg:hidden z-20"
+              className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"
               onClick={() => setSidebarOpen(false)}
             />
           )}
 
-          {/* Main Content */}
-          <main className="flex-1 overflow-y-auto">
-            {/* Templates Header */}
-            <header className="bg-card border-b border-border shadow-sm sticky top-0 z-40 hidden lg:block">
-              <div className="flex items-center justify-between px-6 py-4">
-                <div className="flex items-center space-x-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-primary-foreground" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 2L3.09 8.26L12 14L20.91 8.26L12 2Z"/>
-                        <path d="M3.09 15.74L12 22L20.91 15.74L12 9.48L3.09 15.74Z"/>
-                      </svg>
-                    </div>
-                    <h1 className="text-xl font-bold text-foreground">PromptLockr</h1>
-                  </div>
-                </div>
-
-                {/* Search Bar */}
-                <div className="flex items-center space-x-3 flex-1 max-w-md mx-8">
-                  <SearchBar
-                    onSearch={setSearchQuery}
-                    placeholder="Search templates, tags, or content..."
-                    className="w-full"
-                  />
-                </div>
-
-                {/* Header Actions */}
-                <div className="flex items-center space-x-3">
-                  <Link to="/settings" className="cursor-pointer">
-                    <div 
-                      data-testid="link-profile-settings"
-                      className="w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:opacity-90 transition-opacity"
-                    >
-                      <span className="text-sm font-medium text-primary-foreground">U</span>
-                    </div>
-                  </Link>
-                </div>
-              </div>
-            </header>
-
-            {/* Templates Content */}
-            <div className="p-6">
+          {/* Main Content - EXACT SAME as Dashboard */}
+          <main className="flex-1 p-6 lg:p-8">
               {/* Templates Header with Controls */}
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -372,7 +332,6 @@ export default function TemplatesPage() {
               )}
             </>
           )}
-            </div>
           </main>
         </div>
 
