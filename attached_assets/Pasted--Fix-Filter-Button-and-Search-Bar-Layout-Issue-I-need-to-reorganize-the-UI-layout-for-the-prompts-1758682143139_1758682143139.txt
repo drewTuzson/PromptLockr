@@ -1,0 +1,288 @@
+## Fix Filter Button and Search Bar Layout Issue
+
+I need to reorganize the UI layout for the prompts page. Currently, the filter button has replaced the search bar in the header, but I need both elements visible and properly positioned.
+
+**Current Issue:**
+- The filter button is currently in the top header area where the search bar used to be
+- The search functionality is missing from the UI
+- The filter button needs to be repositioned next to the view toggle icons (grid/list view)
+
+**Desired Layout:**
+1. **Search bar** - Should be restored to the top header area (where the filter button currently is)
+2. **Filter button** - Should be moved to immediately left of the view toggle icons (grid/list view buttons)
+3. Both features must remain fully functional
+
+**Technical Context:**
+- Frontend: React 18.3.1 + TypeScript + Vite
+- UI Components: Radix UI + Tailwind CSS
+- The filter triggers an off-canvas drawer/sheet component
+- View toggle icons switch between grid and list layouts
+
+**Please implement the following changes:**
+
+## 1. Restore Search Bar to Header
+
+The search bar component should be placed back in the header area. Look for the header/navigation component and ensure it includes:
+
+```tsx
+// The search input should be in the header area
+<div className="flex items-center gap-4">
+  {/* Search Bar Component */}
+  <div className="relative flex-1 max-w-md">
+    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+    <input
+      type="text"
+      placeholder="Search prompts..."
+      value={searchTerm}
+      onChange={(e) => setSearchTerm(e.target.value)}
+      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+    />
+  </div>
+</div>
+```
+
+## 2. Relocate Filter Button Next to View Toggle
+
+Move the filter button to be immediately left of the view toggle icons. The layout should look like:
+
+```tsx
+// In the prompts list header area (not the main navigation)
+<div className="flex items-center justify-between mb-6">
+  <div className="flex items-center gap-2">
+    <h1 className="text-2xl font-bold">All Prompts</h1>
+    <p className="text-gray-500">Manage and organize your AI prompts</p>
+  </div>
+  
+  {/* Right side controls */}
+  <div className="flex items-center gap-2">
+    {/* Filter Button - should be here */}
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => setIsFilterOpen(true)}
+      className="flex items-center gap-2"
+    >
+      <Filter className="w-4 h-4" />
+      Filter
+    </Button>
+    
+    {/* View Toggle Buttons */}
+    <div className="flex items-center border rounded-lg">
+      <Button
+        variant={viewMode === 'grid' ? 'default' : 'ghost'}
+        size="sm"
+        onClick={() => setViewMode('grid')}
+        className="rounded-r-none"
+      >
+        <Grid className="w-4 h-4" />
+      </Button>
+      <Button
+        variant={viewMode === 'list' ? 'default' : 'ghost'}
+        size="sm"
+        onClick={() => setViewMode('list')}
+        className="rounded-l-none"
+      >
+        <List className="w-4 h-4" />
+      </Button>
+    </div>
+    
+    {/* Export Button */}
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleExport}
+    >
+      <Download className="w-4 h-4 mr-2" />
+      Export
+    </Button>
+  </div>
+</div>
+```
+
+## 3. Ensure Filter Sheet/Drawer Remains Functional
+
+The filter sheet component should continue to work as expected:
+
+```tsx
+// Filter Sheet Component (off-canvas drawer)
+<Sheet open={isFilterOpen} onOpenChange={setIsFilterOpen}>
+  <SheetContent side="left" className="w-80">
+    <SheetHeader>
+      <SheetTitle>Filter Prompts</SheetTitle>
+      <SheetDescription>
+        Refine your prompt search with filters
+      </SheetDescription>
+    </SheetHeader>
+    
+    <div className="mt-6 space-y-6">
+      {/* Platform Filter */}
+      <div>
+        <label className="text-sm font-medium mb-2 block">Platform</label>
+        <Select value={filters.platform} onValueChange={(value) => updateFilter('platform', value)}>
+          <SelectTrigger>
+            <SelectValue placeholder="All Platforms" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Platforms</SelectItem>
+            <SelectItem value="ChatGPT">ChatGPT</SelectItem>
+            <SelectItem value="Claude">Claude</SelectItem>
+            <SelectItem value="Midjourney">Midjourney</SelectItem>
+            <SelectItem value="Perplexity">Perplexity</SelectItem>
+            <SelectItem value="Gemini">Gemini</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      
+      {/* Tags Filter */}
+      <div>
+        <label className="text-sm font-medium mb-2 block">Tags</label>
+        <TagSelector
+          selectedTags={filters.tags}
+          onTagsChange={(tags) => updateFilter('tags', tags)}
+          availableTags={availableTags}
+        />
+      </div>
+      
+      {/* Date Range Filter */}
+      <div>
+        <label className="text-sm font-medium mb-2 block">Date Range</label>
+        <DateRangePicker
+          value={filters.dateRange}
+          onChange={(range) => updateFilter('dateRange', range)}
+        />
+      </div>
+      
+      {/* Favorites Only */}
+      <div className="flex items-center space-x-2">
+        <Checkbox
+          id="favorites"
+          checked={filters.favoritesOnly}
+          onCheckedChange={(checked) => updateFilter('favoritesOnly', checked)}
+        />
+        <label htmlFor="favorites" className="text-sm font-medium">
+          Favorites Only
+        </label>
+      </div>
+      
+      {/* Clear Filters Button */}
+      <Button
+        variant="outline"
+        className="w-full"
+        onClick={clearFilters}
+      >
+        Clear All Filters
+      </Button>
+    </div>
+  </SheetContent>
+</Sheet>
+```
+
+## 4. Update Component Structure
+
+The main prompts page component should have this structure:
+
+```tsx
+const PromptsPage = () => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [filters, setFilters] = useState({
+    platform: 'all',
+    tags: [],
+    dateRange: null,
+    favoritesOnly: false
+  });
+
+  return (
+    <div className="container mx-auto px-4 py-6">
+      {/* Main Header with Search */}
+      <header className="mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4 flex-1">
+            {/* Logo/Title */}
+            <h1 className="text-xl font-semibold">PromptLockr</h1>
+            
+            {/* Search Bar - Main position */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search prompts..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border rounded-lg"
+              />
+            </div>
+          </div>
+          
+          {/* User Menu */}
+          <UserMenu />
+        </div>
+      </header>
+
+      {/* Prompts Section Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-bold">All Prompts</h2>
+          <p className="text-gray-500">Manage and organize your AI prompts</p>
+        </div>
+        
+        {/* Controls Group */}
+        <div className="flex items-center gap-2">
+          {/* Filter Button - Repositioned here */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsFilterOpen(true)}
+          >
+            <Filter className="w-4 h-4 mr-2" />
+            Filter
+          </Button>
+          
+          {/* View Toggle */}
+          <ToggleGroup type="single" value={viewMode} onValueChange={setViewMode}>
+            <ToggleGroupItem value="grid" aria-label="Grid view">
+              <Grid className="w-4 h-4" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="list" aria-label="List view">
+              <List className="w-4 h-4" />
+            </ToggleGroupItem>
+          </ToggleGroup>
+          
+          {/* Export Button */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Download className="w-4 h-4 mr-2" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleExport('json')}>
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport('csv')}>
+                Export as CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Prompts Grid/List */}
+      <PromptsView 
+        viewMode={viewMode} 
+        prompts={filteredPrompts}
+        searchTerm={searchTerm}
+        filters={filters}
+      />
+
+      {/* Filter Sheet */}
+      <FilterSheet 
+        open={isFilterOpen} 
+        onOpenChange={setIsFilterOpen}
+        filters={filters}
+        onFiltersChange={setFilters}
+      />
+    </div>
+  );
