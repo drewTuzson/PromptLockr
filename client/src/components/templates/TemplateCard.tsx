@@ -171,10 +171,10 @@ export function TemplateCard({
             </div>
           )}
 
-          {template.category && (
+          {template.platform && (
             <div className="flex items-center gap-2">
-              <Badge variant="default" className="text-xs px-2 py-1" data-testid={`category-${template.category}`}>
-                {template.category}
+              <Badge variant="default" className="text-xs px-2 py-1" data-testid={`platform-${template.platform}`}>
+                {template.platform}
               </Badge>
             </div>
           )}

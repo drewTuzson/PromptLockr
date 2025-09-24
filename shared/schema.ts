@@ -75,7 +75,7 @@ export const templates = pgTable("templates", {
   title: text("title").notNull(),
   description: text("description"),
   content: text("content").notNull(),
-  category: text("category"),
+  platform: text("platform"), // Changed from category to platform
   tags: text("tags").$type<string[]>().array().default(sql`'{}'`),
   isPublic: boolean("is_public").default(false),
   useCount: integer("use_count").default(0),
@@ -148,7 +148,7 @@ export const insertTemplateSchema = createInsertSchema(templates).pick({
   title: true,
   description: true,
   content: true,
-  category: true,
+  platform: true,
   tags: true,
   isPublic: true,
 });

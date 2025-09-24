@@ -15,7 +15,7 @@ export type CreateTemplateData = {
   title: string;
   description?: string;
   content: string;
-  category: string;
+  platform: string; // Changed from category to platform for consistency with prompts
   tags: string[];
   variables: Array<{
     variableName: string;
@@ -161,7 +161,8 @@ export function useInstantiateTemplate() {
 
   return useMutation({
     mutationFn: async (data: InstantiateTemplateData) => {
-      const res = await apiRequest('POST', '/api/templates/instantiate', data);
+      const { templateId, ...requestData } = data;
+      const res = await apiRequest('POST', `/api/templates/${templateId}/instantiate`, requestData);
       return res.json();
     },
     onSuccess: (_data, variables) => {

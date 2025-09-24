@@ -29,7 +29,7 @@ interface CreateTemplateModalProps {
     title: string;
     description: string;
     content: string;
-    category?: string;
+    platform?: string;
     tags: string[];
     variables: TemplateVariable[];
   }) => Promise<void>;
@@ -50,7 +50,7 @@ export function CreateTemplateModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState(initialContent);
-  const [category, setCategory] = useState('');
+  const [platform, setPlatform] = useState('ChatGPT'); // Changed from category to platform with default
   const [tags, setTags] = useState<string[]>([]);
   const [variables, setVariables] = useState<TemplateVariable[]>([]);
   const [tagInput, setTagInput] = useState('');
@@ -215,7 +215,7 @@ export function CreateTemplateModal({
         title: title.trim(),
         description: description.trim(),
         content: content.trim(),
-        category: category.trim() || undefined,
+        platform: platform.trim() || undefined,
         tags,
         variables
       });
@@ -224,7 +224,7 @@ export function CreateTemplateModal({
       setTitle('');
       setDescription('');
       setContent('');
-      setCategory('');
+      setPlatform('ChatGPT');
       setTags([]);
       setVariables([]);
       setTagInput('');
@@ -252,7 +252,7 @@ export function CreateTemplateModal({
     setTitle('');
     setDescription('');
     setContent(initialContent);
-    setCategory('');
+    setPlatform('ChatGPT');
     setTags([]);
     setVariables([]);
     setTagInput('');
@@ -293,14 +293,22 @@ export function CreateTemplateModal({
             </div>
 
             <div>
-              <Label htmlFor="category">Category</Label>
-              <Input
-                id="category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g., Writing, Marketing, Development..."
-                data-testid="input-category"
-              />
+              <Label htmlFor="platform">Platform</Label>
+              <Select value={platform} onValueChange={setPlatform}>
+                <SelectTrigger data-testid="select-platform">
+                  <SelectValue placeholder="Select platform" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ChatGPT">ChatGPT</SelectItem>
+                  <SelectItem value="Claude">Claude</SelectItem>
+                  <SelectItem value="Perplexity">Perplexity</SelectItem>
+                  <SelectItem value="Gemini">Gemini</SelectItem>
+                  <SelectItem value="Midjourney">Midjourney</SelectItem>
+                  <SelectItem value="DALL-E">DALL-E</SelectItem>
+                  <SelectItem value="Copilot">Copilot</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div>

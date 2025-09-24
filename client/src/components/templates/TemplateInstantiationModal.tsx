@@ -410,9 +410,9 @@ export function TemplateInstantiationModal({
                     {tag}
                   </Badge>
                 ))}
-                {template.category && (
+                {template.platform && (
                   <Badge variant="default" className="text-xs">
-                    {template.category}
+                    {template.platform}
                   </Badge>
                 )}
                 <Badge variant="outline" className="text-xs">

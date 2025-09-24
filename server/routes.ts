@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users } from "@shared/schema";
 import { z } from "zod";
 import { ReplitDBAdapter } from "../lib/db/replit-db";
 import { AuthService } from "../lib/auth/jwt-auth";
@@ -782,12 +782,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/templates", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      const { category, search } = req.query;
+      const { platform, search } = req.query;
       
       let whereConditions = [eq(templates.userId, userId)];
       
-      if (category && typeof category === 'string') {
-        whereConditions.push(eq(templates.category, category));
+      if (platform && typeof platform === 'string') {
+        whereConditions.push(eq(templates.platform, platform));
       }
       
       const userTemplates = await drizzleDB
@@ -826,10 +826,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/templates", async (req, res) => {
     try {
       const { userId } = requireAuth(req);
-      const { title, description, content, category, tags, variables } = req.body;
+      const { title, description, content, platform, tags, variables } = req.body;
       
       console.log('[TEMPLATE CREATE] Starting template creation for userId:', userId);
-      console.log('[TEMPLATE CREATE] Request body:', { title, description, content, category, tags, variables });
+      console.log('[TEMPLATE CREATE] Request body:', { title, description, content, platform, tags, variables });
       
       // Validate template content
       const validation = templateEngine.validateTemplate(content);
@@ -851,7 +851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         title,
         description,
         content,
-        category,
+        platform,
         tags: tags || [],
         isPublic: false
       };
@@ -879,28 +879,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log('[TEMPLATE CREATE] Template inserted successfully:', template);
       
-      // Create template variables if provided
-      if (variables && Array.isArray(variables)) {
-        const variableData = variables.map((variable: any, index: number) => ({
+      // Create template variables from detected variables
+      if (detectedVars && detectedVars.length > 0) {
+        const variableData = detectedVars.map((variableName: string, index: number) => ({
           templateId: template.id,
-          variableName: variable.variableName,
-          variableType: variable.variableType || 'text',
-          required: variable.required !== false,
-          defaultValue: variable.defaultValue,
-          options: variable.options,
-          description: variable.description,
-          minValue: variable.minValue,
-          maxValue: variable.maxValue,
-          sortOrder: variable.sortOrder || index
+          variableName: variableName,
+          variableType: 'text',
+          required: true,
+          defaultValue: null,
+          options: null,
+          description: null,
+          minValue: null,
+          maxValue: null,
+          sortOrder: index
         }));
         
         const validVariables = variableData.filter(v => 
           insertTemplateVariableSchema.safeParse(v).success
         );
         
+        console.log('[TEMPLATE CREATE] Creating template variables from detected vars:', validVariables);
         if (validVariables.length > 0) {
           await drizzleDB.insert(templateVariables)
             .values(validVariables);
+          console.log('[TEMPLATE CREATE] Template variables created successfully');
         }
       }
       
@@ -1028,7 +1030,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         title: title || `${template.title} - ${new Date().toLocaleDateString()}`,
         content: result,
-        platform: 'ChatGPT' as const,
+        platform: template.platform || 'ChatGPT',
         tags: template.tags || [],
         folderId: targetFolder || null,
         isFavorite: false,
@@ -1046,13 +1048,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newPrompt = await storage.createPrompt(promptValidation.data);
       const prompt = newPrompt;
       
-      // Record template usage
-      await drizzleDB.insert(templateUsage).values({
-        templateId,
-        userId,
-        promptId: prompt.id,
-        variableValues: JSON.stringify(variableValues)
-      });
+      // Record template usage - ensure user exists in PostgreSQL first
+      try {
+        // Check if user exists in PostgreSQL, if not create them
+        const [existingUser] = await drizzleDB
+          .select()
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+          
+        if (!existingUser) {
+          // Get user data from authentication system
+          const authUser = await storage.getUser(userId);
+          if (authUser) {
+            // Create user in PostgreSQL to match ReplitDB
+            await drizzleDB.insert(users).values({
+              id: authUser.id,
+              email: authUser.email,
+              passwordHash: authUser.passwordHash,
+              createdAt: authUser.createdAt,
+              preferences: JSON.stringify(authUser.preferences)
+            });
+          }
+        }
+        
+        // Now record template usage
+        await drizzleDB.insert(templateUsage).values({
+          templateId,
+          userId,
+          promptId: prompt.id,
+          variableValues: JSON.stringify(variableValues)
+        });
+      } catch (usageError) {
+        // Log the error but don't fail the entire request
+        console.error('Failed to record template usage:', usageError);
+        // Template usage tracking is optional - the prompt was still created successfully
+      }
       
       // Update template use count
       await drizzleDB.update(templates)
