@@ -34,6 +34,27 @@
   --sidebar-ring: hsl(202.8169 89.1213% 53.1373%);
   --hover-bg: #f0f5f7;
   --hover-text: #23272e;
+  
+  /* Button Design Tokens */
+  --btn-fg: #66768c;
+  --btn-bg: #ffffff;
+  --btn-border: #e1e7f0;
+  --btn-hover-fg: #23272e;
+  --btn-hover-bg: #f0f5f7;
+  --btn-hover-border: #f0f5f7;
+  --btn-active-fg: #ffffff;
+  --btn-active-bg: #2562ea;
+  --btn-active-border: #2562ea;
+  --btn-logout-fg: #ed4242;
+  --btn-logout-bg: #ffffff;
+  --btn-logout-border: #ffffff;
+  --btn-logout-hover-fg: #ffffff;
+  --btn-logout-hover-bg: #ed4242;
+  --btn-logout-hover-border: #ed4242;
+  --favorite-fg: #66768c;
+  --favorite-hover-fg: #ed4242;
+  --favorite-active-fg: #ed4242;
+  
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-serif: 'Georgia', serif;
   --font-mono: 'Consolas', 'Monaco', monospace;
@@ -70,6 +91,26 @@
   --sidebar-ring: hsl(202.8169 89.1213% 53.1373%);
   --hover-bg: #1f2937;
   --hover-text: #e5e7eb;
+  
+  /* Button Design Tokens - Dark Mode */
+  --btn-fg: #66768c;
+  --btn-bg: #1f2937;
+  --btn-border: #374151;
+  --btn-hover-fg: #e5e7eb;
+  --btn-hover-bg: #374151;
+  --btn-hover-border: #374151;
+  --btn-active-fg: #ffffff;
+  --btn-active-bg: #2562ea;
+  --btn-active-border: #2562ea;
+  --btn-logout-fg: #ed4242;
+  --btn-logout-bg: #1f2937;
+  --btn-logout-border: #1f2937;
+  --btn-logout-hover-fg: #ffffff;
+  --btn-logout-hover-bg: #ed4242;
+  --btn-logout-hover-border: #ed4242;
+  --favorite-fg: #66768c;
+  --favorite-hover-fg: #ed4242;
+  --favorite-active-fg: #ed4242;
 }
 
 @layer base {
@@ -122,6 +163,22 @@
     -webkit-line-clamp: 3;
   }
 
+  /* Favorite Icon System */
+  .favorite-icon {
+    color: var(--favorite-fg);
+    transition: color 0.2s ease-in-out;
+  }
+  
+  .favorite-icon:hover {
+    color: var(--favorite-hover-fg);
+  }
+  
+  .favorite-icon[aria-pressed="true"],
+  .favorite-icon.active {
+    color: var(--favorite-active-fg);
+  }
+  
+  /* DEPRECATED: Will be removed after Button component migration */
   .hover-bg-consistent:hover {
     background-color: var(--hover-bg) !important;
     color: var(--hover-text) !important;
