@@ -101,7 +101,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
       <CardContent className="p-6">
         <div className="flex items-start justify-between mb-4">
           <Badge 
-            className={cn("text-xs px-2.5 py-1 rounded-full font-medium hover-bg-consistent", platformClasses[prompt.platform] || platformClasses['Custom/Other'])}
+            className={cn("text-xs px-2.5 py-1 rounded-full font-medium", platformClasses[prompt.platform] || platformClasses['Custom/Other'])}
           >
             {prompt.platform}
           </Badge>
@@ -111,9 +111,9 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
           )}>
             <Button
               data-testid="button-copy"
-              variant="ghost"
+              variant="default"
               size="sm"
-              className="p-1.5 h-auto hover-bg-consistent"
+              className="p-1.5 h-auto"
               onClick={(e) => {
                 e.stopPropagation();
                 handleCopy();
@@ -123,9 +123,9 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
             </Button>
             <Button
               data-testid="button-favorite"
-              variant="ghost"
+              variant="default"
               size="sm"
-              className="p-1.5 h-auto hover-bg-consistent"
+              className="p-1.5 h-auto"
               onClick={(e) => {
                 e.stopPropagation();
                 handleFavoriteToggle();
@@ -133,18 +133,19 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
             >
               <Heart 
                 className={cn(
-                  "w-4 h-4 transition-colors",
-                  prompt.isFavorite ? "text-accent fill-current" : "text-muted-foreground"
-                )} 
+                  "w-4 h-4 favorite-icon",
+                  prompt.isFavorite && "active"
+                )}
+                aria-pressed={Boolean(prompt.isFavorite)}
               />
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   data-testid="button-menu"
-                  variant="ghost"
+                  variant="default"
                   size="sm"
-                  className="p-1.5 h-auto hover-bg-consistent"
+                  className="p-1.5 h-auto"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="w-4 h-4 text-muted-foreground" />

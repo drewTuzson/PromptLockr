@@ -42,8 +42,8 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
           <Button
             data-testid="button-new-prompt"
             onClick={onCreatePrompt}
-            className="w-full py-2.5 px-4 rounded-lg font-medium hover-bg-consistent flex items-center justify-center space-x-2"
-            variant="outline"
+            className="w-full py-2.5 px-4 rounded-lg font-medium flex items-center justify-center space-x-2"
+            variant="default"
           >
             <Plus className="w-4 h-4" />
             <span>New Prompt</span>
@@ -51,8 +51,8 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
           <Button
             data-testid="button-import"
             onClick={onImport}
-            variant="outline"
-            className="w-full border border-border py-2.5 px-4 rounded-lg font-medium hover-bg-consistent transition-colors flex items-center justify-center space-x-2"
+            variant="default"
+            className="w-full py-2.5 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
           >
             <Upload className="w-4 h-4" />
             <span>Import</span>
@@ -148,9 +148,9 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
         <div className="border-t border-border pt-6 space-y-2">
           <Button
             data-testid="button-theme-toggle"
-            variant="ghost"
+            variant="default"
             onClick={toggleTheme}
-            className="w-full justify-start space-x-3 hover-bg-consistent"
+            className="w-full justify-start space-x-3"
           >
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             <span>{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
@@ -158,8 +158,8 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
           
           <Button
             data-testid="button-settings"
-            variant="ghost"
-            className="w-full justify-start space-x-3 hover-bg-consistent"
+            variant="default"
+            className="w-full justify-start space-x-3"
             asChild
           >
             <Link to="/settings">
@@ -170,9 +170,9 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
           
           <Button
             data-testid="button-logout"
-            variant="ghost"
+            variant="logout"
             onClick={logout}
-            className="w-full justify-start space-x-3 text-destructive hover-bg-consistent"
+            className="w-full justify-start space-x-3"
           >
             <LogOut className="w-4 h-4" />
             <span>Logout</span>
