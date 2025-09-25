@@ -66,7 +66,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Check if user exists
+      // Check if user exists in Replit DB
       const existingUser = await replitDB.getUserByEmail(email);
       if (existingUser) {
         return res.status(409).json({
@@ -74,9 +74,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Create user
+      // Create user in Replit DB
       const passwordHash = await AuthService.hashPassword(password);
-      const user = await replitDB.createUser({
+      const replitUser = await replitDB.createUser({
         email,
         passwordHash,
         createdAt: new Date().toISOString(),
@@ -85,15 +85,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
+      // SYNC TO POSTGRESQL - Critical addition for Epic 6 features
+      try {
+        await drizzleDB.insert(users).values({
+          id: replitUser.id,
+          email: email,
+          passwordHash: passwordHash,
+          createdAt: new Date(),
+          preferences: JSON.stringify({ theme: 'light' })
+        }).onConflictDoNothing(); // Prevent duplicates
+      } catch (pgError) {
+        console.error('PostgreSQL sync error during signup:', pgError);
+        // Don't fail signup if PostgreSQL sync fails, but log it
+      }
+
       // Generate token
-      const token = AuthService.generateToken(user.id, user.email);
+      const token = AuthService.generateToken(replitUser.id, replitUser.email);
 
       res.status(201).json({
         token,
         user: {
-          id: user.id,
-          email: user.email,
-          preferences: user.preferences
+          id: replitUser.id,
+          email: replitUser.email,
+          preferences: replitUser.preferences
         }
       });
     } catch (error) {
