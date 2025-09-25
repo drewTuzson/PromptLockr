@@ -435,7 +435,7 @@ export default function Dashboard() {
                           onClick={() => setSortBy(option.value)}
                           className={cn(
                             "dropdown-menu-item cursor-pointer",
-                            sortBy === option.value && "bg-[var(--btn-active-bg)] text-[var(--btn-active-fg)]"
+                            sortBy === option.value && "text-[var(--favorite-active-fg)] font-bold"
                           )}
                           data-testid={`sort-option-${option.value}`}
                         >

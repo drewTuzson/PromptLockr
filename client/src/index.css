@@ -189,7 +189,7 @@
   .dropdown-menu-item:hover,
   .dropdown-menu-item:focus {
     background-color: var(--btn-hover-bg) !important;
-    color: var(--btn-hover-text) !important;
+    color: var(--btn-hover-fg) !important;
   }
   
   .dropdown-menu-item-destructive {
