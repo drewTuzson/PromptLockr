@@ -113,7 +113,7 @@ export default function TrashPage() {
                   onClick={() => handleRestore(prompt.id)}
                   disabled={restorePrompt.isPending}
                   data-testid={`button-restore-${prompt.id}`}
-                  className="bg-primary text-primary-foreground hover-bg-consistent"
+                  className="bg-primary text-primary-foreground"
                 >
                   <RotateCcw className="w-4 h-4 mr-1" />
                   Restore

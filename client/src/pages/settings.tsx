@@ -38,7 +38,7 @@ export default function Settings() {
                 <Link 
                   to="/dashboard" 
                   data-testid="link-back-dashboard"
-                  className="flex items-center space-x-2 text-muted-foreground hover-bg-consistent"
+                  className="flex items-center space-x-2 text-muted-foreground hover:bg-[var(--btn-hover-bg)] hover:text-[var(--btn-hover-text)] transition-colors"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Back to Dashboard</span>
@@ -151,7 +151,7 @@ export default function Settings() {
                       data-testid="button-export-data"
                       variant="outline"
                       onClick={handleExportData}
-                      className="flex items-center space-x-2 hover-bg-consistent"
+                      className="flex items-center space-x-2"
                     >
                       <Download className="w-4 h-4" />
                       <span>Export Data</span>
@@ -167,7 +167,7 @@ export default function Settings() {
                       data-testid="button-import-data"
                       variant="outline"
                       onClick={handleImportData}
-                      className="flex items-center space-x-2 hover-bg-consistent"
+                      className="flex items-center space-x-2"
                     >
                       <Upload className="w-4 h-4" />
                       <span>Import Data</span>

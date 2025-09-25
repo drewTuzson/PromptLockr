@@ -100,7 +100,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
         <Button
           data-testid={`button-save-rename-${folder.id}`}
           size="sm"
-          variant="ghost"
+          variant="outline"
           onClick={handleRename}
           disabled={updateFolder.isPending}
           className="h-6 w-6 p-1"
@@ -110,7 +110,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
         <Button
           data-testid={`button-cancel-rename-${folder.id}`}
           size="sm"
-          variant="ghost"
+          variant="outline"
           onClick={handleCancelEdit}
           className="h-6 w-6 p-1"
         >
@@ -124,7 +124,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
     <>
       <div
         data-testid={`folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
-        className="group flex items-center space-x-2 px-3 py-2 rounded-lg hover-bg-consistent transition-colors"
+        className="group flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-[var(--btn-hover-bg)] hover:text-[var(--btn-hover-text)] transition-colors"
       >
         <Link 
           to={`/dashboard/folder/${folder.id}`}
@@ -139,7 +139,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
           <DropdownMenuTrigger asChild>
             <Button
               data-testid={`button-folder-menu-${folder.id}`}
-              variant="ghost"
+              variant="outline"
               size="sm"
               className="h-6 w-6 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={(e) => e.preventDefault()} // Prevent navigation when clicking menu

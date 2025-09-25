@@ -321,7 +321,7 @@ export default function Dashboard() {
             <div className="flex items-center space-x-4">
               <Button
                 data-testid="button-sidebar-toggle"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 className="lg:hidden p-2"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -394,7 +394,7 @@ export default function Dashboard() {
                 {view === 'folder' && (
                   <Button
                     data-testid="button-back-to-all-prompts"
-                    variant="ghost"
+                    variant="outline"
                     asChild
                     className="flex items-center space-x-2"
                   >
@@ -418,7 +418,7 @@ export default function Dashboard() {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="flex items-center gap-2 hover-bg-consistent"
+                        className="flex items-center gap-2"
                         data-testid="button-sort"
                       >
                         <ArrowUpAZ className="w-4 h-4" />
@@ -457,19 +457,19 @@ export default function Dashboard() {
                 <div className="flex items-center border rounded-lg">
                   <Button
                     data-testid="button-view-card"
-                    variant={viewMode === 'card' ? 'default' : 'ghost'}
+                    variant={viewMode === 'card' ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setViewMode('card')}
-                    className="rounded-r-none hover-bg-consistent"
+                    className="rounded-r-none"
                   >
                     <Grid3X3 className="w-4 h-4" />
                   </Button>
                   <Button
                     data-testid="button-view-list"
-                    variant={viewMode === 'list' ? 'default' : 'ghost'}
+                    variant={viewMode === 'list' ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setViewMode('list')}
-                    className="rounded-l-none border-l hover-bg-consistent"
+                    className="rounded-l-none border-l"
                   >
                     <List className="w-4 h-4" />
                   </Button>
@@ -479,7 +479,7 @@ export default function Dashboard() {
                   data-testid="button-export"
                   variant="outline"
                   onClick={handleExport}
-                  className="flex items-center space-x-2 hover-bg-consistent"
+                  className="flex items-center space-x-2"
                 >
                   <Download className="w-4 h-4" />
                   <span>Export</span>
@@ -656,7 +656,7 @@ export default function Dashboard() {
                               onClick={() => handleRestorePrompt(prompt.id)}
                               disabled={restorePrompt.isPending}
                               data-testid={`button-restore-${prompt.id}`}
-                              className="bg-primary text-primary-foreground hover-bg-consistent"
+                              className="bg-primary text-primary-foreground"
                             >
                               <RotateCcw className="w-4 h-4 mr-1" />
                               Restore
@@ -701,7 +701,7 @@ export default function Dashboard() {
                       >
                         <div className="flex items-center space-x-4 flex-1 min-w-0">
                           <Badge 
-                            className={cn("text-xs px-2.5 py-1 rounded-full font-medium hover-bg-consistent", platformClasses[prompt.platform] || platformClasses['Custom/Other'])}
+                            className={cn("text-xs px-2.5 py-1 rounded-full font-medium", platformClasses[prompt.platform] || platformClasses['Custom/Other'])}
                           >
                             {prompt.platform}
                           </Badge>
@@ -830,7 +830,7 @@ export default function Dashboard() {
             <AlertDialogAction
               data-testid="button-confirm-permanent-delete"
               onClick={() => promptToDelete && handlePermanentDeletePrompt(promptToDelete)}
-              className="bg-destructive text-destructive-foreground hover-bg-consistent"
+              className="bg-destructive text-destructive-foreground"
             >
               Delete Forever
             </AlertDialogAction>
