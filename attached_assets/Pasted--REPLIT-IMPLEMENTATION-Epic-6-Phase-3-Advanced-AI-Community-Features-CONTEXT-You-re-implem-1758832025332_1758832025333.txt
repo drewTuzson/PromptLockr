@@ -1,0 +1,1182 @@
+# REPLIT IMPLEMENTATION: Epic 6 Phase 3 - Advanced AI & Community Features
+
+## CONTEXT
+You're implementing Phase 3 of Epic 6 for PromptLockr after successfully completing:
+- **Phase 1**: Username system, avatars, sharing, profiles
+- **Phase 2**: Mobile excellence, PWA, explore & discovery
+
+## PHASE 3 OBJECTIVES
+Transform PromptLockr into an AI-powered collaborative platform with advanced prompt enhancement, community collections, analytics, and collaborative development features.
+
+## DATABASE SCHEMA UPDATES
+
+```sql
+-- Prompt Collections (curated lists by users)
+CREATE TABLE prompt_collections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  cover_image_url VARCHAR(500),
+  is_public BOOLEAN DEFAULT true,
+  is_featured BOOLEAN DEFAULT false,
+  view_count INTEGER DEFAULT 0,
+  follower_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Collection Items
+CREATE TABLE collection_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  collection_id UUID REFERENCES prompt_collections(id) ON DELETE CASCADE,
+  prompt_id UUID REFERENCES prompts(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  added_by_user_id UUID REFERENCES users(id),
+  notes TEXT,
+  added_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(collection_id, prompt_id)
+);
+
+-- Collection Followers
+CREATE TABLE collection_followers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  collection_id UUID REFERENCES prompt_collections(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  followed_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(collection_id, user_id)
+);
+
+-- AI Enhancement Sessions
+CREATE TABLE ai_enhancement_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prompt_id UUID REFERENCES prompts(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  original_content TEXT NOT NULL,
+  enhanced_content TEXT,
+  enhancement_type VARCHAR(50), -- 'clarity', 'specificity', 'creativity', 'technical', 'casual'
+  ai_model VARCHAR(50), -- 'gpt-4', 'claude-3', 'internal'
+  parameters JSONB, -- temperature, style, focus areas
+  quality_score DECIMAL(3,2), -- 0.00 to 1.00
+  user_rating INTEGER, -- 1-5 stars
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Prompt Analytics
+CREATE TABLE prompt_analytics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prompt_id UUID REFERENCES prompts(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  view_count INTEGER DEFAULT 0,
+  copy_count INTEGER DEFAULT 0,
+  like_count INTEGER DEFAULT 0,
+  save_count INTEGER DEFAULT 0,
+  share_count INTEGER DEFAULT 0,
+  enhancement_count INTEGER DEFAULT 0,
+  avg_time_spent INTEGER, -- seconds
+  unique_viewers INTEGER DEFAULT 0,
+  UNIQUE(prompt_id, date)
+);
+
+-- Collaborative Sessions
+CREATE TABLE collab_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  original_prompt_id UUID REFERENCES prompts(id),
+  final_prompt_id UUID REFERENCES prompts(id),
+  created_by_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(20) DEFAULT 'active', -- 'active', 'completed', 'archived'
+  max_participants INTEGER DEFAULT 10,
+  current_participants INTEGER DEFAULT 1,
+  session_code VARCHAR(20) UNIQUE NOT NULL,
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP
+);
+
+-- Collaborative Participants
+CREATE TABLE collab_participants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES collab_sessions(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  role VARCHAR(20) DEFAULT 'contributor', -- 'owner', 'moderator', 'contributor'
+  contribution_count INTEGER DEFAULT 0,
+  joined_at TIMESTAMP DEFAULT NOW(),
+  last_active_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(session_id, user_id)
+);
+
+-- Collaborative Contributions
+CREATE TABLE collab_contributions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES collab_sessions(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  contribution_type VARCHAR(20), -- 'edit', 'comment', 'suggestion', 'vote'
+  content TEXT NOT NULL,
+  parent_contribution_id UUID REFERENCES collab_contributions(id),
+  votes_up INTEGER DEFAULT 0,
+  votes_down INTEGER DEFAULT 0,
+  is_accepted BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- AI Recommendations
+CREATE TABLE ai_recommendations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  prompt_id UUID REFERENCES prompts(id) ON DELETE CASCADE,
+  recommendation_type VARCHAR(30), -- 'similar', 'trending', 'personalized', 'collaborative'
+  score DECIMAL(3,2), -- relevance score 0.00 to 1.00
+  reason TEXT, -- explanation for recommendation
+  is_seen BOOLEAN DEFAULT false,
+  is_clicked BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Add new columns to existing tables
+ALTER TABLE prompts ADD COLUMN enhancement_available BOOLEAN DEFAULT true;
+ALTER TABLE prompts ADD COLUMN last_enhanced_at TIMESTAMP;
+ALTER TABLE prompts ADD COLUMN total_enhancements INTEGER DEFAULT 0;
+ALTER TABLE prompts ADD COLUMN avg_quality_score DECIMAL(3,2);
+ALTER TABLE prompts ADD COLUMN collaboration_enabled BOOLEAN DEFAULT false;
+
+ALTER TABLE users ADD COLUMN contributor_level INTEGER DEFAULT 1; -- 1-10 based on contributions
+ALTER TABLE users ADD COLUMN total_contributions INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN quality_score DECIMAL(3,2); -- average quality of contributions
+ALTER TABLE users ADD COLUMN specialties TEXT[]; -- ['technical', 'creative', 'business']
+```
+
+## API ENDPOINTS
+
+```typescript
+// Collections Management
+app.post("/api/collections", authMiddleware, async (req, res) => {
+  const { title, description, isPublic } = req.body;
+  const userId = req.user.id;
+
+  const collection = await db.insert(promptCollections).values({
+    userId,
+    title,
+    description,
+    isPublic
+  }).returning();
+
+  res.json(collection[0]);
+});
+
+app.get("/api/collections/featured", async (req, res) => {
+  const collections = await db.select()
+    .from(promptCollections)
+    .where(eq(promptCollections.isFeatured, true))
+    .orderBy(desc(promptCollections.followerCount))
+    .limit(10);
+
+  res.json(collections);
+});
+
+app.post("/api/collections/:id/items", authMiddleware, async (req, res) => {
+  const { promptId, notes } = req.body;
+  const collectionId = req.params.id;
+
+  // Get current max position
+  const maxPosition = await db.select({ max: max(collectionItems.position) })
+    .from(collectionItems)
+    .where(eq(collectionItems.collectionId, collectionId));
+
+  const item = await db.insert(collectionItems).values({
+    collectionId,
+    promptId,
+    position: (maxPosition[0].max || 0) + 1,
+    addedByUserId: req.user.id,
+    notes
+  }).returning();
+
+  res.json(item[0]);
+});
+
+// AI Enhancement Engine
+app.post("/api/prompts/:id/enhance", authMiddleware, async (req, res) => {
+  const promptId = req.params.id;
+  const { enhancementType = 'clarity', parameters = {} } = req.body;
+
+  // Get original prompt
+  const prompt = await db.select()
+    .from(prompts)
+    .where(eq(prompts.id, promptId))
+    .limit(1);
+
+  if (!prompt[0]) {
+    return res.status(404).json({ error: 'Prompt not found' });
+  }
+
+  // AI Enhancement Logic
+  const enhancedContent = await enhancePrompt(prompt[0].content, {
+    type: enhancementType,
+    ...parameters
+  });
+
+  // Calculate quality score
+  const qualityScore = calculateQualityScore(prompt[0].content, enhancedContent);
+
+  // Save enhancement session
+  const session = await db.insert(aiEnhancementSessions).values({
+    promptId,
+    userId: req.user.id,
+    originalContent: prompt[0].content,
+    enhancedContent,
+    enhancementType,
+    aiModel: 'internal',
+    parameters,
+    qualityScore
+  }).returning();
+
+  // Update prompt stats
+  await db.update(prompts)
+    .set({
+      totalEnhancements: sql`${prompts.totalEnhancements} + 1`,
+      lastEnhancedAt: new Date(),
+      avgQualityScore: sql`(COALESCE(${prompts.avgQualityScore}, 0) + ${qualityScore}) / 2`
+    })
+    .where(eq(prompts.id, promptId));
+
+  res.json({
+    session: session[0],
+    enhancedContent,
+    qualityScore,
+    improvements: analyzeImprovements(prompt[0].content, enhancedContent)
+  });
+});
+
+// Collaborative Sessions
+app.post("/api/collab/sessions", authMiddleware, async (req, res) => {
+  const { title, description, promptId, maxParticipants = 10 } = req.body;
+
+  const sessionCode = generateSessionCode();
+
+  const session = await db.transaction(async (tx) => {
+    // Create session
+    const [newSession] = await tx.insert(collabSessions).values({
+      title,
+      description,
+      originalPromptId: promptId,
+      createdByUserId: req.user.id,
+      maxParticipants,
+      sessionCode
+    }).returning();
+
+    // Add creator as first participant
+    await tx.insert(collabParticipants).values({
+      sessionId: newSession.id,
+      userId: req.user.id,
+      role: 'owner'
+    });
+
+    return newSession;
+  });
+
+  res.json(session);
+});
+
+app.post("/api/collab/sessions/:code/join", authMiddleware, async (req, res) => {
+  const { code } = req.params;
+
+  const session = await db.select()
+    .from(collabSessions)
+    .where(eq(collabSessions.sessionCode, code))
+    .limit(1);
+
+  if (!session[0]) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  if (session[0].currentParticipants >= session[0].maxParticipants) {
+    return res.status(400).json({ error: 'Session is full' });
+  }
+
+  // Add participant
+  await db.insert(collabParticipants).values({
+    sessionId: session[0].id,
+    userId: req.user.id,
+    role: 'contributor'
+  }).onConflictDoNothing();
+
+  // Update participant count
+  await db.update(collabSessions)
+    .set({ currentParticipants: sql`${collabSessions.currentParticipants} + 1` })
+    .where(eq(collabSessions.id, session[0].id));
+
+  res.json({ session: session[0], joined: true });
+});
+
+// Analytics Dashboard
+app.get("/api/prompts/:id/analytics", authMiddleware, async (req, res) => {
+  const promptId = req.params.id;
+  const { period = '7d' } = req.query;
+
+  const startDate = getStartDate(period);
+
+  const analytics = await db.select({
+    date: promptAnalytics.date,
+    viewCount: promptAnalytics.viewCount,
+    copyCount: promptAnalytics.copyCount,
+    likeCount: promptAnalytics.likeCount,
+    saveCount: promptAnalytics.saveCount,
+    shareCount: promptAnalytics.shareCount,
+    avgTimeSpent: promptAnalytics.avgTimeSpent
+  })
+  .from(promptAnalytics)
+  .where(and(
+    eq(promptAnalytics.promptId, promptId),
+    gte(promptAnalytics.date, startDate)
+  ))
+  .orderBy(promptAnalytics.date);
+
+  const summary = {
+    totalViews: analytics.reduce((sum, day) => sum + day.viewCount, 0),
+    totalEngagement: analytics.reduce((sum, day) =>
+      sum + day.likeCount + day.saveCount + day.shareCount, 0),
+    avgTimeSpent: Math.round(
+      analytics.reduce((sum, day) => sum + (day.avgTimeSpent || 0), 0) / analytics.length
+    ),
+    trend: calculateTrend(analytics)
+  };
+
+  res.json({ analytics, summary, period });
+});
+
+// AI Recommendations
+app.get("/api/recommendations", authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+
+  // Get user's interaction history
+  const userHistory = await getUserInteractionHistory(userId);
+
+  // Generate personalized recommendations
+  const recommendations = await generateRecommendations(userId, userHistory);
+
+  // Save recommendations
+  const saved = await db.insert(aiRecommendations)
+    .values(recommendations.map(rec => ({
+      userId,
+      promptId: rec.promptId,
+      recommendationType: rec.type,
+      score: rec.score,
+      reason: rec.reason
+    })))
+    .returning();
+
+  res.json(saved);
+});
+```
+
+## REACT COMPONENTS
+
+### 1. Collections Components
+
+```tsx
+// client/src/components/collections/CollectionCard.tsx
+import React from 'react';
+import { motion } from 'framer-motion';
+import { Folder, Lock, Globe, Users } from 'lucide-react';
+
+interface CollectionCardProps {
+  collection: {
+    id: string;
+    title: string;
+    description?: string;
+    coverImageUrl?: string;
+    isPublic: boolean;
+    promptCount: number;
+    followerCount: number;
+    author: {
+      username: string;
+      avatarUrl?: string;
+    };
+  };
+  onOpen: () => void;
+  onFollow?: () => void;
+}
+
+export const CollectionCard: React.FC<CollectionCardProps> = ({
+  collection,
+  onOpen,
+  onFollow
+}) => {
+  return (
+    <motion.div
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.98 }}
+      className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden cursor-pointer"
+      onClick={onOpen}
+    >
+      {collection.coverImageUrl ? (
+        <div className="h-32 bg-gradient-to-br from-blue-500 to-purple-600">
+          <img
+            src={collection.coverImageUrl}
+            alt={collection.title}
+            className="w-full h-full object-cover opacity-90"
+          />
+        </div>
+      ) : (
+        <div className="h-32 bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+          <Folder className="w-12 h-12 text-white opacity-80" />
+        </div>
+      )}
+
+      <div className="p-4">
+        <div className="flex items-start justify-between mb-2">
+          <h3 className="font-semibold text-gray-900 dark:text-white line-clamp-1">
+            {collection.title}
+          </h3>
+          {collection.isPublic ? (
+            <Globe className="w-4 h-4 text-gray-400" />
+          ) : (
+            <Lock className="w-4 h-4 text-gray-400" />
+          )}
+        </div>
+
+        {collection.description && (
+          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-3">
+            {collection.description}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3 text-xs text-gray-500">
+            <span>{collection.promptCount} prompts</span>
+            <span>•</span>
+            <span className="flex items-center">
+              <Users className="w-3 h-3 mr-1" />
+              {collection.followerCount}
+            </span>
+          </div>
+
+          {onFollow && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onFollow();
+              }}
+              className="text-xs font-medium text-blue-600 hover:text-blue-700"
+            >
+              Follow
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+          <img
+            src={collection.author.avatarUrl || '/default-avatar.png'}
+            alt={collection.author.username}
+            className="w-5 h-5 rounded-full mr-2"
+          />
+          <span className="text-xs text-gray-600 dark:text-gray-400">
+            @{collection.author.username}
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+// client/src/components/collections/CreateCollectionModal.tsx
+import React from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import * as Dialog from '@radix-ui/react-dialog';
+
+const collectionSchema = z.object({
+  title: z.string().min(3).max(100),
+  description: z.string().max(500).optional(),
+  isPublic: z.boolean()
+});
+
+export const CreateCollectionModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (data: any) => void;
+}> = ({ isOpen, onClose, onSubmit }) => {
+  const form = useForm({
+    resolver: zodResolver(collectionSchema),
+    defaultValues: {
+      title: '',
+      description: '',
+      isPublic: true
+    }
+  });
+
+  return (
+    <Dialog.Root open={isOpen} onOpenChange={onClose}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
+          <Dialog.Title className="text-xl font-semibold mb-4">
+            Create Collection
+          </Dialog.Title>
+
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Title</label>
+              <input
+                {...form.register('title')}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="My Awesome Collection"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Description</label>
+              <textarea
+                {...form.register('description')}
+                className="w-full px-3 py-2 border rounded-lg"
+                rows={3}
+                placeholder="Describe your collection..."
+              />
+            </div>
+
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                {...form.register('isPublic')}
+                className="mr-2"
+              />
+              <label className="text-sm">Make this collection public</label>
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Create
+              </button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+};
+```
+
+### 2. AI Enhancement Components
+
+```tsx
+// client/src/components/ai/EnhancementPanel.tsx
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Sparkles, Zap, Target, Lightbulb, MessageSquare, Sliders } from 'lucide-react';
+import { useEnhancePrompt } from '../../hooks/useEnhancePrompt';
+
+const enhancementTypes = [
+  { id: 'clarity', name: 'Clarity', icon: Target, description: 'Make it clearer and more precise' },
+  { id: 'specificity', name: 'Specificity', icon: Zap, description: 'Add more specific details' },
+  { id: 'creativity', name: 'Creativity', icon: Lightbulb, description: 'Make it more creative' },
+  { id: 'technical', name: 'Technical', icon: Sliders, description: 'Add technical depth' },
+  { id: 'casual', name: 'Casual', icon: MessageSquare, description: 'Make it more conversational' }
+];
+
+export const EnhancementPanel: React.FC<{
+  prompt: { id: string; content: string };
+  onEnhanced: (content: string) => void;
+}> = ({ prompt, onEnhanced }) => {
+  const [selectedType, setSelectedType] = useState('clarity');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [parameters, setParameters] = useState({
+    temperature: 0.7,
+    focusAreas: []
+  });
+
+  const { mutate: enhance, isLoading, data } = useEnhancePrompt();
+
+  const handleEnhance = () => {
+    enhance({
+      promptId: prompt.id,
+      enhancementType: selectedType,
+      parameters
+    });
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-900 rounded-lg p-6">
+      <div className="flex items-center mb-4">
+        <Sparkles className="w-5 h-5 text-purple-600 mr-2" />
+        <h3 className="text-lg font-semibold">AI Enhancement</h3>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+        {enhancementTypes.map(type => (
+          <motion.button
+            key={type.id}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setSelectedType(type.id)}
+            className={`p-3 rounded-lg border transition-colors ${
+              selectedType === type.id
+                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <type.icon className="w-5 h-5 mx-auto mb-1" />
+            <div className="text-xs font-medium">{type.name}</div>
+          </motion.button>
+        ))}
+      </div>
+
+      {showAdvanced && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg"
+        >
+          <label className="block text-sm font-medium mb-2">
+            Temperature (Creativity)
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={parameters.temperature}
+            onChange={(e) => setParameters({
+              ...parameters,
+              temperature: parseFloat(e.target.value)
+            })}
+            className="w-full"
+          />
+          <div className="flex justify-between text-xs text-gray-500 mt-1">
+            <span>Focused</span>
+            <span>{parameters.temperature}</span>
+            <span>Creative</span>
+          </div>
+        </motion.div>
+      )}
+
+      <button
+        onClick={() => setShowAdvanced(!showAdvanced)}
+        className="text-sm text-purple-600 hover:text-purple-700 mb-4"
+      >
+        {showAdvanced ? 'Hide' : 'Show'} Advanced Options
+      </button>
+
+      <button
+        onClick={handleEnhance}
+        disabled={isLoading}
+        className="w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 transition-all"
+      >
+        {isLoading ? (
+          <span className="flex items-center justify-center">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            >
+              <Sparkles className="w-5 h-5 mr-2" />
+            </motion.div>
+            Enhancing...
+          </span>
+        ) : (
+          'Enhance with AI'
+        )}
+      </button>
+
+      {data && (
+        <AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-green-800 dark:text-green-300">
+                Quality Score: {(data.qualityScore * 100).toFixed(0)}%
+              </span>
+              <button
+                onClick={() => onEnhanced(data.enhancedContent)}
+                className="text-sm text-green-600 hover:text-green-700"
+              >
+                Apply Changes
+              </button>
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              {data.improvements.map((improvement: string, i: number) => (
+                <div key={i} className="flex items-start mt-1">
+                  <span className="text-green-500 mr-1">✓</span>
+                  {improvement}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+    </div>
+  );
+};
+```
+
+### 3. Collaborative Components
+
+```tsx
+// client/src/components/collab/CollabSession.tsx
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Users, MessageCircle, Edit3, ThumbsUp, ThumbsDown, Check } from 'lucide-react';
+import { useCollabSession } from '../../hooks/useCollabSession';
+
+export const CollabSession: React.FC<{
+  sessionCode: string;
+}> = ({ sessionCode }) => {
+  const { session, participants, contributions, addContribution, vote } = useCollabSession(sessionCode);
+  const [activeTab, setActiveTab] = useState<'edit' | 'discuss'>('edit');
+  const [editContent, setEditContent] = useState('');
+
+  if (!session) return <div>Loading session...</div>;
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">{session.title}</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Session Code: <span className="font-mono font-bold">{sessionCode}</span>
+            </p>
+          </div>
+          <div className="flex items-center space-x-4">
+            <div className="flex -space-x-2">
+              {participants.slice(0, 5).map((p) => (
+                <img
+                  key={p.id}
+                  src={p.user.avatarUrl || '/default-avatar.png'}
+                  alt={p.user.username}
+                  className="w-8 h-8 rounded-full border-2 border-white"
+                  title={`@${p.user.username}`}
+                />
+              ))}
+              {participants.length > 5 && (
+                <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-xs font-medium">
+                  +{participants.length - 5}
+                </div>
+              )}
+            </div>
+            <span className="text-sm text-gray-600">
+              <Users className="w-4 h-4 inline mr-1" />
+              {participants.length}/{session.maxParticipants}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex border-b border-gray-200 dark:border-gray-700">
+        <button
+          onClick={() => setActiveTab('edit')}
+          className={`flex-1 py-3 px-4 font-medium transition-colors ${
+            activeTab === 'edit'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          <Edit3 className="w-4 h-4 inline mr-2" />
+          Collaborative Edit
+        </button>
+        <button
+          onClick={() => setActiveTab('discuss')}
+          className={`flex-1 py-3 px-4 font-medium transition-colors ${
+            activeTab === 'discuss'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          <MessageCircle className="w-4 h-4 inline mr-2" />
+          Discussion ({contributions.filter(c => c.type === 'comment').length})
+        </button>
+      </div>
+
+      {/* Content Area */}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'edit' ? (
+          <div className="h-full flex">
+            {/* Editor */}
+            <div className="flex-1 p-4">
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="w-full h-full p-4 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Start collaborating on the prompt..."
+              />
+            </div>
+
+            {/* Suggestions Sidebar */}
+            <div className="w-80 border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto">
+              <h3 className="font-semibold mb-3">Suggestions</h3>
+              {contributions
+                .filter(c => c.type === 'suggestion')
+                .map((suggestion) => (
+                  <motion.div
+                    key={suggestion.id}
+                    initial={{ x: 20, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center">
+                        <img
+                          src={suggestion.user.avatarUrl || '/default-avatar.png'}
+                          alt={suggestion.user.username}
+                          className="w-6 h-6 rounded-full mr-2"
+                        />
+                        <span className="text-sm font-medium">
+                          @{suggestion.user.username}
+                        </span>
+                      </div>
+                      {suggestion.isAccepted && (
+                        <Check className="w-4 h-4 text-green-500" />
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
+                      {suggestion.content}
+                    </p>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => vote(suggestion.id, 'up')}
+                        className="flex items-center text-xs text-gray-600 hover:text-green-600"
+                      >
+                        <ThumbsUp className="w-3 h-3 mr-1" />
+                        {suggestion.votesUp}
+                      </button>
+                      <button
+                        onClick={() => vote(suggestion.id, 'down')}
+                        className="flex items-center text-xs text-gray-600 hover:text-red-600"
+                      >
+                        <ThumbsDown className="w-3 h-3 mr-1" />
+                        {suggestion.votesDown}
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+            </div>
+          </div>
+        ) : (
+          <div className="p-4">
+            {/* Discussion Thread */}
+            <div className="max-w-3xl mx-auto">
+              {contributions
+                .filter(c => c.type === 'comment')
+                .map((comment) => (
+                  <motion.div
+                    key={comment.id}
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="mb-4"
+                  >
+                    <div className="flex items-start">
+                      <img
+                        src={comment.user.avatarUrl || '/default-avatar.png'}
+                        alt={comment.user.username}
+                        className="w-8 h-8 rounded-full mr-3"
+                      />
+                      <div className="flex-1">
+                        <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                          <div className="flex items-center mb-1">
+                            <span className="font-medium text-sm">
+                              @{comment.user.username}
+                            </span>
+                            <span className="text-xs text-gray-500 ml-2">
+                              {new Date(comment.createdAt).toRelativeTime()}
+                            </span>
+                          </div>
+                          <p className="text-sm">{comment.content}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Action Bar */}
+      <div className="border-t border-gray-200 dark:border-gray-700 p-4">
+        {activeTab === 'edit' ? (
+          <div className="flex space-x-3">
+            <button
+              onClick={() => addContribution('edit', editContent)}
+              className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Submit Edit
+            </button>
+            <button
+              onClick={() => addContribution('suggestion', editContent)}
+              className="px-6 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50"
+            >
+              Suggest Instead
+            </button>
+          </div>
+        ) : (
+          <div className="flex space-x-3">
+            <input
+              type="text"
+              placeholder="Add a comment..."
+              className="flex-1 px-4 py-2 border rounded-lg"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.currentTarget.value) {
+                  addContribution('comment', e.currentTarget.value);
+                  e.currentTarget.value = '';
+                }
+              }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+```
+
+### 4. Analytics Dashboard
+
+```tsx
+// client/src/components/analytics/PromptAnalytics.tsx
+import React from 'react';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { TrendingUp, Eye, Copy, Heart, Bookmark, Share2, Clock } from 'lucide-react';
+
+export const PromptAnalytics: React.FC<{
+  promptId: string;
+}> = ({ promptId }) => {
+  const { data: analytics, summary } = usePromptAnalytics(promptId);
+
+  const metrics = [
+    { icon: Eye, label: 'Total Views', value: summary.totalViews, trend: '+12%' },
+    { icon: Heart, label: 'Engagement', value: summary.totalEngagement, trend: '+8%' },
+    { icon: Clock, label: 'Avg. Time', value: `${summary.avgTimeSpent}s`, trend: '+5%' },
+    { icon: TrendingUp, label: 'Trend Score', value: summary.trend.toFixed(1), trend: '+15%' }
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-2">
+              <metric.icon className="w-5 h-5 text-gray-400" />
+              <span className="text-xs text-green-600 font-medium">{metric.trend}</span>
+            </div>
+            <div className="text-2xl font-bold">{metric.value}</div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">{metric.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Engagement Chart */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+        <h3 className="text-lg font-semibold mb-4">Engagement Over Time</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={analytics}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" />
+            <YAxis />
+            <Tooltip />
+            <Line type="monotone" dataKey="viewCount" stroke="#3B82F6" name="Views" />
+            <Line type="monotone" dataKey="likeCount" stroke="#EF4444" name="Likes" />
+            <Line type="monotone" dataKey="saveCount" stroke="#10B981" name="Saves" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Action Distribution */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+        <h3 className="text-lg font-semibold mb-4">User Actions</h3>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={[
+            { action: 'View', count: summary.totalViews },
+            { action: 'Copy', count: analytics.reduce((sum, d) => sum + d.copyCount, 0) },
+            { action: 'Like', count: analytics.reduce((sum, d) => sum + d.likeCount, 0) },
+            { action: 'Save', count: analytics.reduce((sum, d) => sum + d.saveCount, 0) },
+            { action: 'Share', count: analytics.reduce((sum, d) => sum + d.shareCount, 0) }
+          ]}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="action" />
+            <YAxis />
+            <Tooltip />
+            <Bar dataKey="count" fill="#8B5CF6" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+```
+
+## HELPER FUNCTIONS
+
+```typescript
+// shared/aiEnhancement.ts
+export async function enhancePrompt(
+  content: string,
+  options: {
+    type: 'clarity' | 'specificity' | 'creativity' | 'technical' | 'casual';
+    temperature?: number;
+    focusAreas?: string[];
+  }
+): Promise<string> {
+  const prompts = {
+    clarity: `Improve the clarity of this prompt: "${content}". Make it more precise and easier to understand.`,
+    specificity: `Add more specific details to this prompt: "${content}". Include concrete examples and parameters.`,
+    creativity: `Make this prompt more creative and imaginative: "${content}". Add unexpected elements.`,
+    technical: `Add technical depth to this prompt: "${content}". Include technical terminology and specifications.`,
+    casual: `Make this prompt more conversational and casual: "${content}". Use friendly, approachable language.`
+  };
+
+  // Simulate AI enhancement (replace with actual AI API call)
+  const enhancedContent = content + ' [Enhanced for ' + options.type + ']';
+
+  return enhancedContent;
+}
+
+export function calculateQualityScore(original: string, enhanced: string): number {
+  // Simple quality score calculation
+  const lengthImprovement = enhanced.length / original.length;
+  const hasMoreDetail = enhanced.split(' ').length > original.split(' ').length;
+  const clarityWords = ['specifically', 'precisely', 'exactly', 'clearly'];
+  const hasClarityImprovements = clarityWords.some(word =>
+    enhanced.toLowerCase().includes(word) && !original.toLowerCase().includes(word)
+  );
+
+  let score = 0.5; // Base score
+  if (lengthImprovement > 1.1 && lengthImprovement < 2) score += 0.2;
+  if (hasMoreDetail) score += 0.15;
+  if (hasClarityImprovements) score += 0.15;
+
+  return Math.min(1, score);
+}
+
+export function analyzeImprovements(original: string, enhanced: string): string[] {
+  const improvements = [];
+
+  if (enhanced.length > original.length * 1.1) {
+    improvements.push('Added more detail and context');
+  }
+
+  if (enhanced.split('\n').length > original.split('\n').length) {
+    improvements.push('Improved structure and formatting');
+  }
+
+  if (enhanced.includes('specifically') || enhanced.includes('exactly')) {
+    improvements.push('Increased specificity');
+  }
+
+  if (enhanced.split(',').length > original.split(',').length) {
+    improvements.push('Added examples or parameters');
+  }
+
+  return improvements;
+}
+
+// shared/collaboration.ts
+export function generateSessionCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+// shared/recommendations.ts
+export async function generateRecommendations(
+  userId: string,
+  history: any[]
+): Promise<any[]> {
+  // Analyze user's interaction history
+  const userTags = new Set();
+  const userPlatforms = new Set();
+
+  history.forEach(item => {
+    item.tags?.forEach(tag => userTags.add(tag));
+    if (item.platform) userPlatforms.add(item.platform);
+  });
+
+  // Generate recommendations based on patterns
+  // This would be replaced with actual ML/AI recommendation engine
+
+  return [];
+}
+```
+
+## IMPLEMENTATION STEPS
+
+1. **Update Database Schema**
+   - Run all ALTER TABLE and CREATE TABLE statements
+   - Update Drizzle schema definitions
+
+2. **Implement Collections System**
+   - Create collection CRUD APIs
+   - Build collection UI components
+   - Add collection management to dashboard
+
+3. **Set Up AI Enhancement**
+   - Implement enhancement API endpoint
+   - Create enhancement UI panel
+   - Add quality scoring system
+
+4. **Build Collaborative Features**
+   - Create session management APIs
+   - Implement real-time collaboration (consider Socket.io)
+   - Build collaborative editor UI
+
+5. **Add Analytics Dashboard**
+   - Set up analytics data collection
+   - Create analytics API endpoints
+   - Build visualization components
+
+6. **Implement Recommendations**
+   - Create recommendation engine
+   - Build recommendation APIs
+   - Add recommendation UI to dashboard
+
+## TESTING CHECKLIST
+
+- [ ] Collections can be created, edited, and deleted
+- [ ] Users can add/remove prompts from collections
+- [ ] AI enhancement generates improved prompts
+- [ ] Quality scores are calculated correctly
+- [ ] Collaborative sessions allow multiple users
+- [ ] Contributions can be voted on and accepted
+- [ ] Analytics track all user interactions
+- [ ] Charts display data correctly
+- [ ] Recommendations are personalized
+- [ ] All mobile interactions work smoothly
+
+## PERFORMANCE OPTIMIZATIONS
+
+1. **Caching**: Use React Query for aggressive caching
+2. **Pagination**: Implement cursor-based pagination for collections
+3. **Lazy Loading**: Load analytics data on demand
+4. **Debouncing**: Debounce collaborative edits (500ms)
+5. **Batching**: Batch analytics updates every 30 seconds
+
+## SUCCESS CRITERIA
+
+Phase 3 is complete when:
+- Collections system fully functional
+- AI enhancement improves prompt quality
+- Collaborative editing works in real-time
+- Analytics provide actionable insights
+- Recommendations are relevant and personalized
+- All features work on mobile devices
+- No performance regression
+- User engagement metrics improve
+
+This implementation establishes PromptLockr as an AI-powered collaborative platform with advanced community features and analytics capabilities.

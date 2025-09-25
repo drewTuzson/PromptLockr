@@ -30,6 +30,11 @@ export const users = pgTable("users", {
   followingCount: integer("following_count").default(0),
   createdUsernameAt: timestamp("created_username_at"),
   avatarUpdatedAt: timestamp("avatar_updated_at"),
+  // Phase 3: Community features
+  contributorLevel: integer("contributor_level").default(1),
+  totalContributions: integer("total_contributions").default(0),
+  qualityScore: varchar("quality_score", { length: 5 }),
+  specialties: text("specialties").$type<string[]>().array(),
 });
 
 export const folders = pgTable("folders", {
@@ -65,6 +70,12 @@ export const prompts = pgTable("prompts", {
   likeCount: integer("like_count").default(0),
   saveCount: integer("save_count").default(0),
   remixCount: integer("remix_count").default(0),
+  // Phase 3: Advanced features
+  enhancementAvailable: boolean("enhancement_available").default(true),
+  lastEnhancedAt: timestamp("last_enhanced_at"),
+  totalEnhancements: integer("total_enhancements").default(0),
+  avgQualityScore: varchar("avg_quality_score", { length: 5 }),
+  collaborationEnabled: boolean("collaboration_enabled").default(false),
 });
 
 export const enhancementSessions = pgTable("enhancement_sessions", {
@@ -167,6 +178,126 @@ export const shareLinks = pgTable("share_links", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Phase 3: Advanced AI & Community Features
+
+// Prompt Collections (curated lists by users)
+export const promptCollections = pgTable("prompt_collections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  coverImageUrl: varchar("cover_image_url", { length: 500 }),
+  isPublic: boolean("is_public").default(true),
+  isFeatured: boolean("is_featured").default(false),
+  viewCount: integer("view_count").default(0),
+  followerCount: integer("follower_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Collection Items
+export const collectionItems = pgTable("collection_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  collectionId: varchar("collection_id").notNull().references(() => promptCollections.id, { onDelete: 'cascade' }),
+  promptId: varchar("prompt_id").notNull().references(() => prompts.id, { onDelete: 'cascade' }),
+  position: integer("position").notNull(),
+  addedByUserId: varchar("added_by_user_id").references(() => users.id),
+  notes: text("notes"),
+  addedAt: timestamp("added_at").defaultNow(),
+});
+
+// Collection Followers
+export const collectionFollowers = pgTable("collection_followers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  collectionId: varchar("collection_id").notNull().references(() => promptCollections.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  followedAt: timestamp("followed_at").defaultNow(),
+});
+
+// AI Enhancement Sessions (Advanced)
+export const aiEnhancementSessions = pgTable("ai_enhancement_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  promptId: varchar("prompt_id").references(() => prompts.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  originalContent: text("original_content").notNull(),
+  enhancedContent: text("enhanced_content"),
+  enhancementType: varchar("enhancement_type", { length: 50 }),
+  aiModel: varchar("ai_model", { length: 50 }),
+  parameters: jsonb("parameters"),
+  qualityScore: varchar("quality_score", { length: 5 }),
+  userRating: integer("user_rating"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Prompt Analytics
+export const promptAnalytics = pgTable("prompt_analytics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  promptId: varchar("prompt_id").notNull().references(() => prompts.id, { onDelete: 'cascade' }),
+  date: timestamp("date").notNull(),
+  viewCount: integer("view_count").default(0),
+  copyCount: integer("copy_count").default(0),
+  likeCount: integer("like_count").default(0),
+  saveCount: integer("save_count").default(0),
+  shareCount: integer("share_count").default(0),
+  enhancementCount: integer("enhancement_count").default(0),
+  avgTimeSpent: integer("avg_time_spent"),
+  uniqueViewers: integer("unique_viewers").default(0),
+});
+
+// Collaborative Sessions
+export const collabSessions = pgTable("collab_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  originalPromptId: varchar("original_prompt_id").references(() => prompts.id),
+  finalPromptId: varchar("final_prompt_id").references(() => prompts.id),
+  createdByUserId: varchar("created_by_user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: varchar("status", { length: 20 }).default('active'),
+  maxParticipants: integer("max_participants").default(10),
+  currentParticipants: integer("current_participants").default(1),
+  sessionCode: varchar("session_code", { length: 20 }).notNull().unique(),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+// Collaborative Participants
+export const collabParticipants = pgTable("collab_participants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => collabSessions.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: varchar("role", { length: 20 }).default('contributor'),
+  contributionCount: integer("contribution_count").default(0),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  lastActiveAt: timestamp("last_active_at").defaultNow(),
+});
+
+// Collaborative Contributions
+export const collabContributions = pgTable("collab_contributions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => collabSessions.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  contributionType: varchar("contribution_type", { length: 20 }),
+  content: text("content").notNull(),
+  parentContributionId: varchar("parent_contribution_id"),
+  votesUp: integer("votes_up").default(0),
+  votesDown: integer("votes_down").default(0),
+  isAccepted: boolean("is_accepted").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// AI Recommendations
+export const aiRecommendations = pgTable("ai_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  promptId: varchar("prompt_id").references(() => prompts.id, { onDelete: 'cascade' }),
+  recommendationType: varchar("recommendation_type", { length: 30 }),
+  score: varchar("score", { length: 5 }),
+  reason: text("reason"),
+  isSeen: boolean("is_seen").default(false),
+  isClicked: boolean("is_clicked").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   passwordHash: true,
@@ -238,6 +369,84 @@ export const insertTemplateUsageSchema = createInsertSchema(templateUsage).pick(
   variableValues: true,
 });
 
+// Phase 3: Insert schemas for new tables
+export const insertPromptCollectionSchema = createInsertSchema(promptCollections).pick({
+  userId: true,
+  title: true,
+  description: true,
+  coverImageUrl: true,
+  isPublic: true,
+});
+
+export const insertCollectionItemSchema = createInsertSchema(collectionItems).pick({
+  collectionId: true,
+  promptId: true,
+  position: true,
+  addedByUserId: true,
+  notes: true,
+});
+
+export const insertCollectionFollowerSchema = createInsertSchema(collectionFollowers).pick({
+  collectionId: true,
+  userId: true,
+});
+
+export const insertAiEnhancementSessionSchema = createInsertSchema(aiEnhancementSessions).pick({
+  promptId: true,
+  userId: true,
+  originalContent: true,
+  enhancedContent: true,
+  enhancementType: true,
+  aiModel: true,
+  parameters: true,
+  qualityScore: true,
+  userRating: true,
+});
+
+export const insertPromptAnalyticsSchema = createInsertSchema(promptAnalytics).pick({
+  promptId: true,
+  date: true,
+  viewCount: true,
+  copyCount: true,
+  likeCount: true,
+  saveCount: true,
+  shareCount: true,
+  enhancementCount: true,
+  avgTimeSpent: true,
+  uniqueViewers: true,
+});
+
+export const insertCollabSessionSchema = createInsertSchema(collabSessions).pick({
+  title: true,
+  description: true,
+  originalPromptId: true,
+  createdByUserId: true,
+  maxParticipants: true,
+  sessionCode: true,
+});
+
+export const insertCollabParticipantSchema = createInsertSchema(collabParticipants).pick({
+  sessionId: true,
+  userId: true,
+  role: true,
+});
+
+export const insertCollabContributionSchema = createInsertSchema(collabContributions).pick({
+  sessionId: true,
+  userId: true,
+  contributionType: true,
+  content: true,
+  parentContributionId: true,
+});
+
+export const insertAiRecommendationSchema = createInsertSchema(aiRecommendations).pick({
+  userId: true,
+  promptId: true,
+  recommendationType: true,
+  score: true,
+  reason: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertFolder = z.infer<typeof insertFolderSchema>;
@@ -255,6 +464,26 @@ export type TemplateVariable = typeof templateVariables.$inferSelect;
 export type InsertTemplateUsage = z.infer<typeof insertTemplateUsageSchema>;
 export type TemplateUsage = typeof templateUsage.$inferSelect;
 
+// Phase 3: Types for new tables
+export type InsertPromptCollection = z.infer<typeof insertPromptCollectionSchema>;
+export type PromptCollection = typeof promptCollections.$inferSelect;
+export type InsertCollectionItem = z.infer<typeof insertCollectionItemSchema>;
+export type CollectionItem = typeof collectionItems.$inferSelect;
+export type InsertCollectionFollower = z.infer<typeof insertCollectionFollowerSchema>;
+export type CollectionFollower = typeof collectionFollowers.$inferSelect;
+export type InsertAiEnhancementSession = z.infer<typeof insertAiEnhancementSessionSchema>;
+export type AiEnhancementSession = typeof aiEnhancementSessions.$inferSelect;
+export type InsertPromptAnalytics = z.infer<typeof insertPromptAnalyticsSchema>;
+export type PromptAnalytics = typeof promptAnalytics.$inferSelect;
+export type InsertCollabSession = z.infer<typeof insertCollabSessionSchema>;
+export type CollabSession = typeof collabSessions.$inferSelect;
+export type InsertCollabParticipant = z.infer<typeof insertCollabParticipantSchema>;
+export type CollabParticipant = typeof collabParticipants.$inferSelect;
+export type InsertCollabContribution = z.infer<typeof insertCollabContributionSchema>;
+export type CollabContribution = typeof collabContributions.$inferSelect;
+export type InsertAiRecommendation = z.infer<typeof insertAiRecommendationSchema>;
+export type AiRecommendation = typeof aiRecommendations.$inferSelect;
+
 // Frontend-specific schema (without userId - added by backend auth)
 export const createPromptSchema = insertPromptSchema.omit({ userId: true });
 export type CreatePrompt = z.infer<typeof createPromptSchema>;
@@ -267,6 +496,22 @@ export type CreateTemplate = z.infer<typeof createTemplateSchema>;
 
 export const createTemplateVariableSchema = insertTemplateVariableSchema.omit({ templateId: true });
 export type CreateTemplateVariable = z.infer<typeof createTemplateVariableSchema>;
+
+// Phase 3: Frontend create schemas
+export const createPromptCollectionSchema = insertPromptCollectionSchema.omit({ userId: true });
+export type CreatePromptCollection = z.infer<typeof createPromptCollectionSchema>;
+
+export const createCollectionItemSchema = insertCollectionItemSchema.omit({ addedByUserId: true });
+export type CreateCollectionItem = z.infer<typeof createCollectionItemSchema>;
+
+export const createAiEnhancementSchema = insertAiEnhancementSessionSchema.omit({ userId: true });
+export type CreateAiEnhancement = z.infer<typeof createAiEnhancementSchema>;
+
+export const createCollabSessionSchema = insertCollabSessionSchema.omit({ createdByUserId: true, sessionCode: true });
+export type CreateCollabSession = z.infer<typeof createCollabSessionSchema>;
+
+export const createCollabContributionSchema = insertCollabContributionSchema.omit({ userId: true });
+export type CreateCollabContribution = z.infer<typeof createCollabContributionSchema>;
 
 // Auth schemas
 export const loginSchema = z.object({
