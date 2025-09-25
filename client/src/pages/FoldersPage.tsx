@@ -84,11 +84,11 @@ function FolderCard({ folder, viewMode, promptCount, onOpen, onEdit, onDelete }:
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>
+              <DropdownMenuItem onClick={onEdit} className="dropdown-menu-item">
                 <Edit2 className="w-4 h-4 mr-2" />
                 Rename
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onDelete} className="text-destructive">
+              <DropdownMenuItem onClick={onDelete} className="dropdown-menu-item-destructive">
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete
               </DropdownMenuItem>
@@ -143,11 +143,11 @@ function FolderCard({ folder, viewMode, promptCount, onOpen, onEdit, onDelete }:
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onEdit}>
+            <DropdownMenuItem onClick={onEdit} className="dropdown-menu-item">
               <Edit2 className="w-4 h-4 mr-2" />
               Rename
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDelete} className="text-destructive">
+            <DropdownMenuItem onClick={onDelete} className="dropdown-menu-item-destructive">
               <Trash2 className="w-4 h-4 mr-2" />
               Delete
             </DropdownMenuItem>
