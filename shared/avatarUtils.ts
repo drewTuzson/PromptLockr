@@ -12,14 +12,17 @@ export const USERNAME_RULES = {
 };
 
 export function generateAvatar(displayName: string = '', username: string = '') {
-  const name = displayName || username;
+  const name = displayName || username || 'User';
   const initials = name
     .split(' ')
     .map(word => word[0]?.toUpperCase() || '')
     .join('')
-    .slice(0, 2) || '?';
+    .slice(0, 2) || 'U';
 
-  const colorIndex = username.charCodeAt(0) % AVATAR_COLORS.length;
+  // Use email or fallback if username is empty
+  const seedString = username || displayName || 'default';
+  const colorIndex = seedString.charCodeAt(0) % AVATAR_COLORS.length;
+
   return {
     initials,
     backgroundColor: AVATAR_COLORS[colorIndex],
@@ -28,16 +31,18 @@ export function generateAvatar(displayName: string = '', username: string = '') 
 }
 
 export function validateUsername(username: string): { valid: boolean; error?: string } {
-  if (username.length < USERNAME_RULES.minLength) {
+  const normalizedUsername = username.toLowerCase(); // Always work with lowercase
+
+  if (normalizedUsername.length < USERNAME_RULES.minLength) {
     return { valid: false, error: `Username must be at least ${USERNAME_RULES.minLength} characters` };
   }
-  if (username.length > USERNAME_RULES.maxLength) {
+  if (normalizedUsername.length > USERNAME_RULES.maxLength) {
     return { valid: false, error: `Username cannot exceed ${USERNAME_RULES.maxLength} characters` };
   }
-  if (!USERNAME_RULES.pattern.test(username)) {
+  if (!USERNAME_RULES.pattern.test(normalizedUsername)) {
     return { valid: false, error: 'Username can only contain letters, numbers, and underscores' };
   }
-  if (USERNAME_RULES.reserved.includes(username.toLowerCase())) {
+  if (USERNAME_RULES.reserved.includes(normalizedUsername)) {
     return { valid: false, error: 'This username is reserved' };
   }
   return { valid: true };
