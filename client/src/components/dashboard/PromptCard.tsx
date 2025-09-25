@@ -38,6 +38,7 @@ const platformClasses: Record<string, string> = {
 
 export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showEnhancement, setShowEnhancement] = useState(false);
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
@@ -107,7 +108,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
           </Badge>
           <div className={cn(
             "flex items-center space-x-2 transition-opacity",
-            isHovered ? "opacity-100" : "opacity-0"
+            (isHovered || isMenuOpen) ? "opacity-100" : "opacity-0"
           )}>
             <Button
               data-testid="button-copy"
@@ -139,7 +140,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
                 aria-pressed={Boolean(prompt.isFavorite)}
               />
             </Button>
-            <DropdownMenu>
+            <DropdownMenu onOpenChange={setIsMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   data-testid="button-menu"
@@ -148,7 +149,10 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
                   className="p-1.5 h-auto border-0"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                  <MoreVertical className={cn(
+                    "w-4 h-4",
+                    isMenuOpen ? "text-white" : "text-muted-foreground"
+                  )} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
