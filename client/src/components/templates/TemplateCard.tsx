@@ -67,7 +67,7 @@ export function TemplateCard({
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" data-testid="template-menu-button">
+              <Button variant="default" size="sm" className="h-8 w-8 p-0" data-testid="template-menu-button">
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>

@@ -68,7 +68,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             <div
               data-testid="link-all-prompts"
               className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover:bg-[var(--btn-hover-bg)] hover:text-[var(--btn-hover-text)]",
                 location === '/dashboard' 
                   ? "bg-muted text-foreground" 
                   : "text-muted-foreground"
@@ -83,7 +83,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             <div
               data-testid="link-favorites"
               className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover:bg-[var(--btn-hover-bg)] hover:text-[var(--btn-hover-text)]",
                 location === '/dashboard/favorites'
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground"
@@ -98,7 +98,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             <div
               data-testid="link-folders"
               className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover:bg-[var(--btn-hover-bg)] hover:text-[var(--btn-hover-text)]",
                 location === '/dashboard/folders'
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground"
@@ -113,7 +113,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             <div
               data-testid="link-templates"
               className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover:bg-[var(--btn-hover-bg)] hover:text-[var(--btn-hover-text)]",
                 location === '/dashboard/templates'
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground"
@@ -128,7 +128,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
             <div
               data-testid="link-trash"
               className={cn(
-                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover-bg-consistent",
+                "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors hover:bg-[var(--btn-hover-bg)] hover:text-[var(--btn-hover-text)]",
                 location === '/dashboard/trash'
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground"

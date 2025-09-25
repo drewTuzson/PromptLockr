@@ -178,9 +178,4 @@
     color: var(--favorite-active-fg);
   }
   
-  /* DEPRECATED: Will be removed after Button component migration */
-  .hover-bg-consistent:hover {
-    background-color: var(--hover-bg) !important;
-    color: var(--hover-text) !important;
-  }
 }

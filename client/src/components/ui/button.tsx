@@ -10,7 +10,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "text-[var(--btn-fg)] bg-[var(--btn-bg)] border border-[var(--btn-border)] hover:text-[var(--btn-hover-fg)] hover:bg-[var(--btn-hover-bg)] hover:border-[var(--btn-hover-border)] active:text-[var(--btn-active-fg)] active:bg-[var(--btn-active-bg)] active:border-[var(--btn-active-border)] data-[state=open]:text-[var(--btn-active-fg)] data-[state=open]:bg-[var(--btn-active-bg)] data-[state=open]:border-[var(--btn-active-border)]",
-        outline: "text-[var(--btn-fg)] bg-[var(--btn-bg)] border border-[var(--btn-border)] hover:text-[var(--btn-hover-fg)] hover:bg-[var(--btn-hover-bg)] hover:border-[var(--btn-hover-border)] active:text-[var(--btn-active-fg)] active:bg-[var(--btn-active-bg)] active:border-[var(--btn-active-border)] data-[state=open]:text-[var(--btn-active-fg)] data-[state=open]:bg-[var(--btn-active-bg)] data-[state=open]:border-[var(--btn-active-border)]",
+        outline: "text-[var(--btn-fg)] bg-transparent border border-[var(--btn-border)] hover:text-[var(--btn-hover-fg)] hover:bg-[var(--btn-hover-bg)] hover:border-[var(--btn-hover-border)] active:text-[var(--btn-active-fg)] active:bg-[var(--btn-active-bg)] active:border-[var(--btn-active-border)] data-[state=open]:text-[var(--btn-active-fg)] data-[state=open]:bg-[var(--btn-active-bg)] data-[state=open]:border-[var(--btn-active-border)]",
         logout: "text-[var(--btn-logout-fg)] bg-[var(--btn-logout-bg)] border border-[var(--btn-logout-border)] hover:text-[var(--btn-logout-hover-fg)] hover:bg-[var(--btn-logout-hover-bg)] hover:border-[var(--btn-logout-hover-border)]",
         destructive:
           "bg-destructive text-destructive-foreground hover:bg-destructive/90",

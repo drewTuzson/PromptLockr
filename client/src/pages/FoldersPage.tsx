@@ -74,7 +74,7 @@ function FolderCard({ folder, viewMode, promptCount, onOpen, onEdit, onDelete }:
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
-                variant="ghost"
+                variant="default"
                 size="sm"
                 className="h-6 w-6 p-0"
                 data-testid={`menu-folder-${folder.id}`}
@@ -133,7 +133,7 @@ function FolderCard({ folder, viewMode, promptCount, onOpen, onEdit, onDelete }:
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              variant="ghost"
+              variant="default"
               size="sm"
               className="h-8 w-8 p-0"
               data-testid={`menu-folder-${folder.id}`}
@@ -177,7 +177,7 @@ function PromptCard({ prompt, viewMode }: PromptCardProps) {
         </p>
         <div className="flex items-center justify-between">
           <Badge variant="outline">{prompt.platform}</Badge>
-          <Button variant="ghost" size="sm">
+          <Button variant="default" size="sm">
             View
           </Button>
         </div>
@@ -199,7 +199,7 @@ function PromptCard({ prompt, viewMode }: PromptCardProps) {
         </p>
         <Badge variant="outline" className="mt-1">{prompt.platform}</Badge>
       </div>
-      <Button variant="ghost" size="sm">
+      <Button variant="default" size="sm">
         View
       </Button>
     </div>
@@ -553,7 +553,7 @@ export default function FoldersPage() {
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center space-x-4">
                     <Button
-                      variant="ghost"
+                      variant="default"
                       size="sm"
                       onClick={() => setSelectedFolder(null)}
                       data-testid="button-back-to-folders"
@@ -573,7 +573,7 @@ export default function FoldersPage() {
                     {/* View Toggle */}
                     <div className="flex rounded-lg border border-border">
                       <Button
-                        variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                        variant={viewMode === 'grid' ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setViewMode('grid')}
                         className="rounded-r-none"
@@ -582,7 +582,7 @@ export default function FoldersPage() {
                         <Grid className="w-4 h-4" />
                       </Button>
                       <Button
-                        variant={viewMode === 'list' ? 'default' : 'ghost'}
+                        variant={viewMode === 'list' ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setViewMode('list')}
                         className="rounded-l-none"
