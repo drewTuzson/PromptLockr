@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Sidebar } from '@/components/dashboard/Sidebar';
+import { PromptCard } from '@/components/dashboard/PromptCard';
 import { SearchBar } from '@/components/dashboard/SearchBar';
 import { RequireAuth } from '@/components/auth/AuthProvider';
 import { useFolders, useCreateFolder, useUpdateFolder, useDeleteFolder } from '@/hooks/useFolders';
@@ -157,54 +158,6 @@ function FolderCard({ folder, viewMode, promptCount, onOpen, onEdit, onDelete }:
   );
 }
 
-interface PromptCardProps {
-  prompt: Prompt;
-  viewMode: 'grid' | 'list';
-}
-
-function PromptCard({ prompt, viewMode }: PromptCardProps) {
-  if (viewMode === 'grid') {
-    return (
-      <div className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-        <div className="flex items-start justify-between mb-2">
-          <h3 className="font-medium text-foreground truncate">{prompt.title}</h3>
-          {prompt.isFavorite && (
-            <Badge variant="secondary" className="ml-2">❤️</Badge>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-          {prompt.content.substring(0, 100)}...
-        </p>
-        <div className="flex items-center justify-between">
-          <Badge variant="outline">{prompt.platform}</Badge>
-          <Button variant="default" size="sm">
-            View
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-muted/50 transition-colors">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center space-x-2 mb-1">
-          <h3 className="font-medium text-foreground truncate">{prompt.title}</h3>
-          {prompt.isFavorite && (
-            <Badge variant="secondary">❤️</Badge>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground truncate">
-          {prompt.content.substring(0, 60)}...
-        </p>
-        <Badge variant="outline" className="mt-1">{prompt.platform}</Badge>
-      </div>
-      <Button variant="default" size="sm">
-        View
-      </Button>
-    </div>
-  );
-}
 
 interface CreateFolderModalProps {
   open: boolean;
@@ -627,7 +580,18 @@ export default function FoldersPage() {
                       : 'space-y-2'
                   }>
                     {filteredPrompts.map((prompt) => (
-                      <PromptCard key={prompt.id} prompt={prompt} viewMode={viewMode} />
+                      <PromptCard 
+                        key={prompt.id} 
+                        prompt={prompt} 
+                        onEdit={(editPrompt) => {
+                          // TODO: Add edit functionality if needed
+                          console.log('Edit prompt:', editPrompt);
+                        }}
+                        onClick={(clickedPrompt) => {
+                          // TODO: Add click functionality if needed  
+                          console.log('Clicked prompt:', clickedPrompt);
+                        }}
+                      />
                     ))}
                   </div>
                 ) : (
