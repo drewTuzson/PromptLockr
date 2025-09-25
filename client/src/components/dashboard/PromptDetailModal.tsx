@@ -14,10 +14,12 @@ import {
   Calendar,
   User,
   Folder,
+  FileText,
   Sparkles
 } from 'lucide-react';
 import { Prompt } from '@shared/schema';
 import { useUpdatePrompt, useDeletePrompt } from '@/hooks/usePrompts';
+import { useFolders } from '@/hooks/useFolders';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -49,6 +51,7 @@ export function PromptDetailModal({ prompt, isOpen, onClose, onEdit }: PromptDet
   const [isEnhancementModalOpen, setIsEnhancementModalOpen] = useState(false);
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
+  const { data: folders } = useFolders();
   const { toast } = useToast();
 
   if (!prompt) return null;
@@ -122,13 +125,13 @@ export function PromptDetailModal({ prompt, isOpen, onClose, onEdit }: PromptDet
               <span>Created {prompt.createdAt ? new Date(prompt.createdAt).toLocaleDateString() : 'Unknown'}</span>
             </div>
             <div className="flex items-center gap-1">
-              <User className="w-3 h-3" />
+              <FileText className="w-3 h-3" />
               <span>{prompt.content.length} characters</span>
             </div>
             {prompt.folderId && (
               <div className="flex items-center gap-1">
                 <Folder className="w-3 h-3" />
-                <span>In folder</span>
+                <span>{folders?.find(f => f.id === prompt.folderId)?.name || 'In folder'}</span>
               </div>
             )}
           </div>

@@ -222,7 +222,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
         
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span data-testid="text-last-accessed">{formatLastAccessed(prompt.lastAccessed)}</span>
-          <span data-testid="text-char-count">{prompt.charCount} chars</span>
+          <span data-testid="text-char-count">{prompt.content.length} chars</span>
         </div>
       </CardContent>
       </Card>
