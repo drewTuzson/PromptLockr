@@ -165,20 +165,20 @@
 
   /* Favorite Icon System */
   .favorite-icon {
-    stroke: #66768c;
+    stroke: var(--favorite-fg);
     fill: transparent;
     transition: stroke 0.2s ease-in-out, fill 0.2s ease-in-out;
   }
   
   .favorite-icon:hover {
-    stroke: #ed4242;
-    fill: #ed4242;
+    stroke: var(--favorite-hover-fg);
+    fill: var(--favorite-hover-fg);
   }
   
   .favorite-icon[aria-pressed="true"],
   .favorite-icon.active {
-    stroke: #ed4242;
-    fill: #ed4242;
+    stroke: var(--favorite-active-fg);
+    fill: var(--favorite-active-fg);
   }
 
   /* Dropdown Menu Item System */
