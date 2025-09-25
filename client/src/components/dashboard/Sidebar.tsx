@@ -148,9 +148,9 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
         <div className="border-t border-border pt-6 space-y-2">
           <Button
             data-testid="button-theme-toggle"
-            variant="default"
+            variant="outline"
             onClick={toggleTheme}
-            className="w-full justify-start space-x-3"
+            className="w-full justify-start space-x-3 border-0"
           >
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             <span>{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
@@ -158,8 +158,8 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
           
           <Button
             data-testid="button-settings"
-            variant="default"
-            className="w-full justify-start space-x-3"
+            variant="outline"
+            className="w-full justify-start space-x-3 border-0"
             asChild
           >
             <Link to="/settings">

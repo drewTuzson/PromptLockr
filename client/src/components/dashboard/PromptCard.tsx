@@ -111,9 +111,9 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
           )}>
             <Button
               data-testid="button-copy"
-              variant="default"
+              variant="outline"
               size="sm"
-              className="p-1.5 h-auto"
+              className="p-1.5 h-auto border-0"
               onClick={(e) => {
                 e.stopPropagation();
                 handleCopy();
@@ -123,9 +123,9 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
             </Button>
             <Button
               data-testid="button-favorite"
-              variant="default"
+              variant="outline"
               size="sm"
-              className="p-1.5 h-auto"
+              className="p-1.5 h-auto border-0"
               onClick={(e) => {
                 e.stopPropagation();
                 handleFavoriteToggle();
@@ -143,9 +143,9 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
               <DropdownMenuTrigger asChild>
                 <Button
                   data-testid="button-menu"
-                  variant="default"
+                  variant="outline"
                   size="sm"
-                  className="p-1.5 h-auto"
+                  className="p-1.5 h-auto border-0"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="w-4 h-4 text-muted-foreground" />
@@ -157,6 +157,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
                     e.stopPropagation();
                     onEdit?.(prompt);
                   }}
+                  className="dropdown-menu-item cursor-pointer"
                 >
                   <Edit className="w-4 h-4 mr-2" />
                   Edit
@@ -166,6 +167,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
                     e.stopPropagation();
                     setShowEnhancement(true);
                   }}
+                  className="dropdown-menu-item cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
                   Enhance with AI
@@ -175,7 +177,7 @@ export function PromptCard({ prompt, onEdit, onClick }: PromptCardProps) {
                     e.stopPropagation();
                     handleDelete();
                   }}
-                  className="text-destructive hover:!bg-destructive hover:!text-destructive-foreground focus:!bg-destructive focus:!text-destructive-foreground"
+                  className="dropdown-menu-item-destructive cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
                   Delete

@@ -151,7 +151,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
             <DropdownMenuItem
               data-testid={`menu-rename-folder-${folder.id}`}
               onClick={() => setIsEditing(true)}
-              className="cursor-pointer"
+              className="dropdown-menu-item cursor-pointer"
             >
               <Edit className="w-4 h-4 mr-2" />
               Rename
@@ -159,7 +159,7 @@ export function FolderItem({ folder, promptCount = 0 }: FolderItemProps) {
             <DropdownMenuItem
               data-testid={`menu-delete-folder-${folder.id}`}
               onClick={() => setShowDeleteDialog(true)}
-              className="cursor-pointer text-destructive focus:text-destructive hover:!bg-destructive hover:!text-destructive-foreground focus:!bg-destructive focus:!text-destructive-foreground"
+              className="dropdown-menu-item-destructive cursor-pointer"
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Delete

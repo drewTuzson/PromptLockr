@@ -433,7 +433,10 @@ export default function Dashboard() {
                         <DropdownMenuItem
                           key={option.value}
                           onClick={() => setSortBy(option.value)}
-                          className={sortBy === option.value ? 'bg-accent' : ''}
+                          className={cn(
+                            "dropdown-menu-item cursor-pointer",
+                            sortBy === option.value && "bg-[var(--btn-active-bg)] text-[var(--btn-active-fg)]"
+                          )}
                           data-testid={`sort-option-${option.value}`}
                         >
                           {option.icon}

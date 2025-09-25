@@ -165,17 +165,42 @@
 
   /* Favorite Icon System */
   .favorite-icon {
-    color: var(--favorite-fg);
-    transition: color 0.2s ease-in-out;
+    stroke: #66768c;
+    fill: transparent;
+    transition: stroke 0.2s ease-in-out, fill 0.2s ease-in-out;
   }
   
   .favorite-icon:hover {
-    color: var(--favorite-hover-fg);
+    stroke: #ed4242;
+    fill: #ed4242;
   }
   
   .favorite-icon[aria-pressed="true"],
   .favorite-icon.active {
-    color: var(--favorite-active-fg);
+    stroke: #ed4242;
+    fill: #ed4242;
+  }
+
+  /* Dropdown Menu Item System */
+  .dropdown-menu-item {
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  }
+  
+  .dropdown-menu-item:hover,
+  .dropdown-menu-item:focus {
+    background-color: var(--btn-hover-bg) !important;
+    color: var(--btn-hover-text) !important;
+  }
+  
+  .dropdown-menu-item-destructive {
+    color: var(--btn-logout-fg);
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  }
+  
+  .dropdown-menu-item-destructive:hover,
+  .dropdown-menu-item-destructive:focus {
+    background-color: var(--btn-logout-hover-bg) !important;
+    color: var(--btn-logout-hover-fg) !important;
   }
   
 }

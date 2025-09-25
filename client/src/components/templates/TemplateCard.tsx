@@ -52,7 +52,7 @@ export function TemplateCard({
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">
             <h3 
-              className="font-medium text-card-foreground mb-1 cursor-pointer hover:text-primary transition-colors"
+              className="font-medium text-card-foreground mb-1 cursor-pointer"
               onClick={() => onView(template)}
               data-testid="template-title"
             >
@@ -72,26 +72,26 @@ export function TemplateCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onView(template)} data-testid="button-view">
+              <DropdownMenuItem onClick={() => onView(template)} className="dropdown-menu-item cursor-pointer" data-testid="button-view">
                 <Eye className="mr-2 h-4 w-4" />
                 View Details
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onInstantiate(template)} data-testid="button-instantiate">
+              <DropdownMenuItem onClick={() => onInstantiate(template)} className="dropdown-menu-item cursor-pointer" data-testid="button-instantiate">
                 <Play className="mr-2 h-4 w-4" />
                 Create Prompt
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onEdit(template)} data-testid="button-edit">
+              <DropdownMenuItem onClick={() => onEdit(template)} className="dropdown-menu-item cursor-pointer" data-testid="button-edit">
                 <FileText className="mr-2 h-4 w-4" />
                 Edit Template
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onViewUsage(template.id)} data-testid="button-usage">
+              <DropdownMenuItem onClick={() => onViewUsage(template.id)} className="dropdown-menu-item cursor-pointer" data-testid="button-usage">
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Usage History
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="text-destructive focus:text-destructive"
+                className="dropdown-menu-item-destructive cursor-pointer"
                 data-testid="button-delete"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
@@ -184,9 +184,9 @@ export function TemplateCard({
       <CardFooter className="px-4 py-3 bg-muted/20 flex items-center justify-between">
         <Button
           onClick={() => onView(template)}
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="text-xs"
+          className="text-xs border-0"
           data-testid="button-view-footer"
         >
           <Eye className="mr-1 h-3 w-3" />
