@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema } from "@shared/schema";
 import { validateUsername, generateAvatar } from "@shared/avatarUtils";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -15,9 +15,45 @@ import { buildFilterConditions, buildOrderBy } from "./utils/filterQueryBuilder.
 import { sql, eq, and, or, desc, ilike, isNotNull, isNull, inArray } from "drizzle-orm";
 import { claudeService } from "./services/claudeService.js";
 import { templateEngine } from "./services/templateEngine.js";
+import rateLimit from "express-rate-limit";
 
 const replitDB = new ReplitDBAdapter();
 const healthDB = new Database();
+
+// Per-user SSE connection management for O(k) performance
+global.notificationConnections = global.notificationConnections || new Map<string, Set<{ id: string; res: any }>>();
+
+// Helper function to broadcast notifications to connected SSE clients
+function broadcastNotification(userId: string, notification: any) {
+  const userConnections = global.notificationConnections?.get(userId);
+  if (!userConnections) return;
+  
+  const deadConnections = new Set<string>();
+  
+  // Send to all connections for this user
+  for (const connection of userConnections) {
+    try {
+      connection.res.write(`data: ${JSON.stringify({ 
+        type: 'notification', 
+        notification 
+      })}\n\n`);
+    } catch (error) {
+      console.error(`Failed to send notification to connection ${connection.id}:`, error);
+      deadConnections.add(connection.id);
+    }
+  }
+  
+  // Clean up dead connections
+  for (const deadId of deadConnections) {
+    const connection = Array.from(userConnections).find(c => c.id === deadId);
+    if (connection) userConnections.delete(connection);
+  }
+  
+  // Remove empty user connection sets
+  if (userConnections.size === 0) {
+    global.notificationConnections?.delete(userId);
+  }
+}
 
 // Quality scoring algorithm for Phase 3 AI Enhancement
 function analyzePromptQuality(content: string) {
@@ -2763,6 +2799,302 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error('Error closing session:', error);
       res.status(500).json({ message: 'Failed to close session' });
+    }
+  });
+
+  // === Phase 4: Notification System API ===
+  
+  // Rate limiting for notification endpoints
+  const notificationRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: { message: 'Too many notification requests, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  
+  const notificationSseRateLimit = rateLimit({
+    windowMs: 60 * 1000, // 1 minute  
+    max: 10, // Limit SSE connection attempts
+    message: { message: 'Too many SSE connection attempts, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  
+  // GET /api/notifications - Get user notifications with pagination
+  app.get("/api/notifications", notificationRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      // Validate query parameters with Zod
+      const querySchema = z.object({
+        limit: z.coerce.number().min(1).max(100).default(20),
+        offset: z.coerce.number().min(0).default(0),
+        unreadOnly: z.enum(['true', 'false']).optional().default('false')
+      });
+      
+      const validation = querySchema.safeParse(req.query);
+      if (!validation.success) {
+        return res.status(400).json({
+          message: 'Invalid query parameters',
+          errors: validation.error.errors
+        });
+      }
+      
+      const { limit, offset, unreadOnly } = validation.data;
+      
+      // Build query conditions
+      let conditions = eq(notifications.userId, userId);
+      if (unreadOnly === 'true') {
+        conditions = and(conditions, isNull(notifications.readAt));
+      }
+      
+      // Get notifications with pagination
+      const userNotifications = await drizzleDB
+        .select()
+        .from(notifications)
+        .where(conditions)
+        .orderBy(desc(notifications.createdAt))
+        .limit(Number(limit))
+        .offset(Number(offset));
+      
+      // Get total count for pagination
+      const [{ count }] = await drizzleDB
+        .select({ count: sql`count(*)` })
+        .from(notifications)
+        .where(conditions);
+      
+      // Get unread count
+      const [{ unreadCount }] = await drizzleDB
+        .select({ unreadCount: sql`count(*)` })
+        .from(notifications)
+        .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+      
+      res.json({
+        notifications: userNotifications,
+        pagination: {
+          total: Number(count),
+          limit: Number(limit),
+          offset: Number(offset),
+          hasMore: Number(offset) + Number(limit) < Number(count)
+        },
+        unreadCount: Number(unreadCount)
+      });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching notifications:', error);
+      res.status(500).json({ message: 'Failed to fetch notifications' });
+    }
+  });
+
+  // POST /api/notifications/mark-read - Mark specific notifications as read
+  app.post("/api/notifications/mark-read", notificationRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      const markReadSchema = z.object({
+        notificationIds: z.array(z.string().min(1)).min(1).max(50, 'Maximum 50 notifications can be marked at once')
+      });
+      
+      const validation = markReadSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          message: 'Invalid input',
+          errors: validation.error.errors
+        });
+      }
+      
+      const { notificationIds } = validation.data;
+      
+      // Mark notifications as read (only for current user)
+      const updated = await drizzleDB
+        .update(notifications)
+        .set({ readAt: new Date() })
+        .where(and(
+          eq(notifications.userId, userId),
+          inArray(notifications.id, notificationIds),
+          isNull(notifications.readAt) // Only update unread notifications
+        ))
+        .returning({ id: notifications.id });
+      
+      // Broadcast unread count change if any notifications were marked as read
+      if (updated.length > 0) {
+        const [{ unreadCount }] = await drizzleDB
+          .select({ unreadCount: sql`count(*)` })
+          .from(notifications)
+          .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+        
+        broadcastNotification(userId, {
+          type: 'unread_count_update',
+          unreadCount: Number(unreadCount)
+        });
+      }
+      
+      res.json({ 
+        message: 'Notifications marked as read',
+        markedCount: updated.length
+      });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error marking notifications as read:', error);
+      res.status(500).json({ message: 'Failed to mark notifications as read' });
+    }
+  });
+
+  // POST /api/notifications/mark-all-read - Mark all notifications as read
+  app.post("/api/notifications/mark-all-read", notificationRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      // Mark all unread notifications as read for user
+      const updated = await drizzleDB
+        .update(notifications)
+        .set({ readAt: new Date() })
+        .where(and(
+          eq(notifications.userId, userId),
+          isNull(notifications.readAt)
+        ))
+        .returning({ id: notifications.id });
+      
+      // Broadcast unread count change if any notifications were marked as read
+      if (updated.length > 0) {
+        broadcastNotification(userId, {
+          type: 'unread_count_update',
+          unreadCount: 0
+        });
+      }
+      
+      res.json({ 
+        message: 'All notifications marked as read',
+        markedCount: updated.length
+      });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error marking all notifications as read:', error);
+      res.status(500).json({ message: 'Failed to mark all notifications as read' });
+    }
+  });
+
+  // POST /api/notifications - Create notification (for testing/admin use)
+  app.post("/api/notifications", notificationRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      const validation = insertNotificationSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          message: 'Invalid input',
+          errors: validation.error.errors
+        });
+      }
+      
+      const notificationData = validation.data;
+      
+      // Create notification in database
+      const [newNotification] = await drizzleDB
+        .insert(notifications)
+        .values({
+          userId: notificationData.userId,
+          type: notificationData.type,
+          title: notificationData.title,
+          message: notificationData.message,
+          data: notificationData.data || null
+        })
+        .returning();
+      
+      // Broadcast to connected SSE clients
+      broadcastNotification(notificationData.userId, newNotification);
+      
+      res.status(201).json({ 
+        message: 'Notification created successfully',
+        notification: newNotification
+      });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error creating notification:', error);
+      res.status(500).json({ message: 'Failed to create notification' });
+    }
+  });
+
+  // GET /api/notifications/stream - Server-Sent Events for real-time notifications
+  app.get("/api/notifications/stream", notificationSseRateLimit, (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      // Connection limit per user (max 3 connections)
+      const userConnections = global.notificationConnections?.get(userId) || new Set();
+      if (userConnections.size >= 3) {
+        return res.status(429).json({ message: 'Too many concurrent connections' });
+      }
+      
+      // Set SSE headers with proper timeout and retry
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Authorization,Cache-Control',
+        'X-Accel-Buffering': 'no', // Disable nginx buffering
+      });
+      
+      // Disable response timeout for long-lived connections
+      res.setTimeout(0);
+      
+      const connectionId = `${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const connection = { id: connectionId, res };
+      
+      // Store connection per user
+      if (!global.notificationConnections?.has(userId)) {
+        global.notificationConnections?.set(userId, new Set());
+      }
+      global.notificationConnections?.get(userId)?.add(connection);
+      
+      // Send initial connection confirmation with retry hint
+      res.write(`retry: 3000\n`);
+      res.write(`data: ${JSON.stringify({ type: 'connected', userId, connectionId })}\n\n`);
+      
+      // Send heartbeat every 15 seconds
+      const heartbeat = setInterval(() => {
+        try {
+          res.write(`event: ping\n`);
+          res.write(`data: ${JSON.stringify({ type: 'heartbeat', timestamp: Date.now() })}\n\n`);
+        } catch (error) {
+          clearInterval(heartbeat);
+          cleanupConnection();
+        }
+      }, 15000);
+      
+      function cleanupConnection() {
+        clearInterval(heartbeat);
+        const userConnections = global.notificationConnections?.get(userId);
+        if (userConnections) {
+          userConnections.delete(connection);
+          if (userConnections.size === 0) {
+            global.notificationConnections?.delete(userId);
+          }
+        }
+        console.log(`SSE client disconnected: ${connectionId}`);
+      }
+      
+      // Clean up on disconnect
+      req.on('close', cleanupConnection);
+      req.on('error', cleanupConnection);
+      
+      console.log(`SSE client connected: ${connectionId}`);
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error setting up SSE connection:', error);
+      res.status(500).json({ message: 'Failed to establish SSE connection' });
     }
   });
 
