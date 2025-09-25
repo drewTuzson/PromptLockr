@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema } from "@shared/schema";
 import { validateUsername, generateAvatar } from "@shared/avatarUtils";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -88,12 +88,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // SYNC TO POSTGRESQL - Critical addition for Epic 6 features
       try {
         await drizzleDB.insert(users).values({
-          id: replitUser.id,
+          id: replitUser.id, // CRITICAL: Must match JWT user ID for foreign keys
           email: email,
           passwordHash: passwordHash,
           createdAt: new Date(),
           preferences: JSON.stringify({ theme: 'light' })
-        }).onConflictDoNothing(); // Prevent duplicates
+        }).onConflictDoUpdate({
+          target: users.email,
+          set: {
+            id: replitUser.id,
+            passwordHash: passwordHash,
+            preferences: JSON.stringify({ theme: 'light' })
+          }
+        });
       } catch (pgError) {
         console.error('PostgreSQL sync error during signup:', pgError);
         // Don't fail signup if PostgreSQL sync fails, but log it
@@ -148,15 +155,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // SYNC TO POSTGRESQL - Ensure user exists for Epic 6 features
       try {
         await drizzleDB.insert(users).values({
-          id: user.id,
+          id: user.id, // CRITICAL: Must match JWT user ID for foreign keys
           email: user.email,
           passwordHash: user.passwordHash,
           createdAt: new Date(user.createdAt),
           preferences: JSON.stringify(user.preferences || { theme: 'light' })
         }).onConflictDoUpdate({
-          target: users.id,
+          target: users.email,
           set: {
-            email: user.email,
+            id: user.id,
+            passwordHash: user.passwordHash,
             preferences: JSON.stringify(user.preferences || { theme: 'light' })
           }
         });
@@ -1214,11 +1222,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (authUser) {
             // Create user in PostgreSQL to match ReplitDB
             await drizzleDB.insert(users).values({
-              id: authUser.id,
+              id: authUser.id, // CRITICAL: Must match JWT user ID for foreign keys
               email: authUser.email,
               passwordHash: authUser.passwordHash,
               createdAt: authUser.createdAt,
-              preferences: JSON.stringify(authUser.preferences)
+              preferences: JSON.stringify(authUser.preferences || { theme: 'light' })
+            }).onConflictDoUpdate({
+              target: users.email,
+              set: {
+                id: authUser.id,
+                passwordHash: authUser.passwordHash,
+                preferences: JSON.stringify(authUser.preferences || { theme: 'light' })
+              }
             });
           }
         }
@@ -1720,6 +1735,286 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Unauthorized' });
       }
       res.status(500).json({ error: 'Failed to save prompt' });
+    }
+  });
+
+  // ===== PHASE 3: COLLECTIONS API ENDPOINTS =====
+
+  // GET /api/collections - List user's collections
+  app.get("/api/collections", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+
+      const userCollections = await drizzleDB
+        .select({
+          id: promptCollections.id,
+          title: promptCollections.title,
+          description: promptCollections.description,
+          coverImageUrl: promptCollections.coverImageUrl,
+          isPublic: promptCollections.isPublic,
+          isFeatured: promptCollections.isFeatured,
+          viewCount: promptCollections.viewCount,
+          followerCount: promptCollections.followerCount,
+          createdAt: promptCollections.createdAt,
+          updatedAt: promptCollections.updatedAt,
+        })
+        .from(promptCollections)
+        .where(eq(promptCollections.userId, userId))
+        .orderBy(desc(promptCollections.updatedAt));
+
+      res.json({ collections: userCollections });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching collections:', error);
+      res.status(500).json({ message: 'Failed to fetch collections' });
+    }
+  });
+
+  // GET /api/collections/featured - Get featured collections
+  app.get("/api/collections/featured", async (req, res) => {
+    try {
+      const featuredCollections = await drizzleDB
+        .select({
+          id: promptCollections.id,
+          title: promptCollections.title,
+          description: promptCollections.description,
+          coverImageUrl: promptCollections.coverImageUrl,
+          isPublic: promptCollections.isPublic,
+          isFeatured: promptCollections.isFeatured,
+          viewCount: promptCollections.viewCount,
+          followerCount: promptCollections.followerCount,
+          createdAt: promptCollections.createdAt,
+          // Include author info
+          author: {
+            username: users.username,
+            displayName: users.displayName,
+            avatarUrl: users.avatarUrl,
+          }
+        })
+        .from(promptCollections)
+        .innerJoin(users, eq(promptCollections.userId, users.id))
+        .where(and(
+          eq(promptCollections.isFeatured, true),
+          eq(promptCollections.isPublic, true)
+        ))
+        .orderBy(desc(promptCollections.followerCount))
+        .limit(10);
+
+      res.json({ collections: featuredCollections });
+    } catch (error: any) {
+      console.error('Error fetching featured collections:', error);
+      res.status(500).json({ message: 'Failed to fetch featured collections' });
+    }
+  });
+
+  // POST /api/collections - Create new collection
+  app.post("/api/collections", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const collectionData = insertPromptCollectionSchema.parse({
+        ...req.body,
+        userId
+      });
+
+      const [newCollection] = await drizzleDB
+        .insert(promptCollections)
+        .values(collectionData)
+        .returning();
+
+      res.status(201).json(newCollection);
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error creating collection:', error);
+      res.status(500).json({ message: 'Failed to create collection' });
+    }
+  });
+
+  // GET /api/collections/:id - Get collection details with items
+  app.get("/api/collections/:id", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { id } = req.params;
+
+      // Get collection details
+      const [collection] = await drizzleDB
+        .select({
+          id: promptCollections.id,
+          title: promptCollections.title,
+          description: promptCollections.description,
+          coverImageUrl: promptCollections.coverImageUrl,
+          isPublic: promptCollections.isPublic,
+          isFeatured: promptCollections.isFeatured,
+          viewCount: promptCollections.viewCount,
+          followerCount: promptCollections.followerCount,
+          createdAt: promptCollections.createdAt,
+          updatedAt: promptCollections.updatedAt,
+          userId: promptCollections.userId,
+        })
+        .from(promptCollections)
+        .where(eq(promptCollections.id, id));
+
+      if (!collection) {
+        return res.status(404).json({ message: 'Collection not found' });
+      }
+
+      // Check if user can access (owner or public)
+      if (collection.userId !== userId && !collection.isPublic) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get collection items with prompt details
+      const items = await drizzleDB
+        .select({
+          id: collectionItems.id,
+          position: collectionItems.position,
+          notes: collectionItems.notes,
+          addedAt: collectionItems.addedAt,
+          prompt: {
+            id: prompts.id,
+            title: prompts.title,
+            content: prompts.content,
+            platform: prompts.platform,
+            tags: prompts.tags,
+            createdAt: prompts.createdAt,
+            likeCount: prompts.likeCount,
+            saveCount: prompts.saveCount,
+          }
+        })
+        .from(collectionItems)
+        .innerJoin(prompts, eq(collectionItems.promptId, prompts.id))
+        .where(eq(collectionItems.collectionId, id))
+        .orderBy(collectionItems.position);
+
+      res.json({ 
+        collection: {
+          ...collection,
+          items
+        }
+      });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching collection:', error);
+      res.status(500).json({ message: 'Failed to fetch collection' });
+    }
+  });
+
+  // POST /api/collections/:id/items - Add prompt to collection
+  app.post("/api/collections/:id/items", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { id } = req.params;
+      const { promptId, notes } = req.body;
+
+      // Verify collection ownership
+      const [collection] = await drizzleDB
+        .select()
+        .from(promptCollections)
+        .where(and(
+          eq(promptCollections.id, id),
+          eq(promptCollections.userId, userId)
+        ));
+
+      if (!collection) {
+        return res.status(404).json({ message: 'Collection not found or access denied' });
+      }
+
+      // Verify prompt exists
+      const [prompt] = await drizzleDB
+        .select()
+        .from(prompts)
+        .where(eq(prompts.id, promptId));
+
+      if (!prompt) {
+        return res.status(404).json({ message: 'Prompt not found' });
+      }
+
+      // Get current max position
+      const [maxPositionResult] = await drizzleDB
+        .select({ max: sql<number>`COALESCE(MAX(${collectionItems.position}), 0)` })
+        .from(collectionItems)
+        .where(eq(collectionItems.collectionId, id));
+
+      const [newItem] = await drizzleDB
+        .insert(collectionItems)
+        .values({
+          collectionId: id,
+          promptId,
+          position: (maxPositionResult.max || 0) + 1,
+          addedByUserId: userId,
+          notes
+        })
+        .returning();
+
+      res.status(201).json(newItem);
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error adding item to collection:', error);
+      res.status(500).json({ message: 'Failed to add item to collection' });
+    }
+  });
+
+  // POST /api/collections/:id/follow - Follow/unfollow collection
+  app.post("/api/collections/:id/follow", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { id } = req.params;
+
+      // Check if already following
+      const [existingFollow] = await drizzleDB
+        .select()
+        .from(collectionFollowers)
+        .where(and(
+          eq(collectionFollowers.collectionId, id),
+          eq(collectionFollowers.userId, userId)
+        ));
+
+      if (existingFollow) {
+        // Unfollow
+        await drizzleDB
+          .delete(collectionFollowers)
+          .where(and(
+            eq(collectionFollowers.collectionId, id),
+            eq(collectionFollowers.userId, userId)
+          ));
+
+        // Update follower count
+        await drizzleDB
+          .update(promptCollections)
+          .set({ followerCount: sql`${promptCollections.followerCount} - 1` })
+          .where(eq(promptCollections.id, id));
+
+        res.json({ following: false });
+      } else {
+        // Follow
+        await drizzleDB
+          .insert(collectionFollowers)
+          .values({
+            collectionId: id,
+            userId
+          });
+
+        // Update follower count
+        await drizzleDB
+          .update(promptCollections)
+          .set({ followerCount: sql`${promptCollections.followerCount} + 1` })
+          .where(eq(promptCollections.id, id));
+
+        res.json({ following: true });
+      }
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error following/unfollowing collection:', error);
+      res.status(500).json({ message: 'Failed to update follow status' });
     }
   });
 

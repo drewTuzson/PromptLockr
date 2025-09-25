@@ -212,7 +212,10 @@ export const collectionFollowers = pgTable("collection_followers", {
   collectionId: varchar("collection_id").notNull().references(() => promptCollections.id, { onDelete: 'cascade' }),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   followedAt: timestamp("followed_at").defaultNow(),
-});
+}, (table) => ({
+  // Unique constraint to prevent duplicate follows
+  uniqueCollectionUser: sql`UNIQUE(${table.collectionId}, ${table.userId})`,
+}));
 
 // AI Enhancement Sessions (Advanced)
 export const aiEnhancementSessions = pgTable("ai_enhancement_sessions", {
