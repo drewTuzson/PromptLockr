@@ -8,6 +8,15 @@ PromptLockr is a full-stack AI prompt management system designed to help AI powe
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+**September 25, 2025 - Layout Consistency Fix**
+- **Issue Resolved**: Fixed persistent styling issues on Folders and Templates pages caused by incorrect sidebar CSS positioning
+- **Root Cause**: FoldersPage and TemplatesPage were using `lg:relative` instead of correct `lg:sticky lg:top-[73px]` CSS classes
+- **Solution**: Created shared `DashboardLayout` component in `client/src/components/ui/dashboard-layout.tsx` 
+- **Implementation**: Updated both FoldersPage and TemplatesPage to use shared layout component, eliminating CSS drift
+- **Benefits**: Ensures 100% layout consistency, prevents future regressions, saves debugging time
+
 ## System Architecture
 
 ### Frontend Architecture
