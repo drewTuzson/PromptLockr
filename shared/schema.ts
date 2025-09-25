@@ -487,6 +487,167 @@ export type CollabContribution = typeof collabContributions.$inferSelect;
 export type InsertAiRecommendation = z.infer<typeof insertAiRecommendationSchema>;
 export type AiRecommendation = typeof aiRecommendations.$inferSelect;
 
+// Phase 4: Enterprise & Production Features
+
+// User Following System
+export const userFollows = pgTable("user_follows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  followerId: varchar("follower_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  followingId: varchar("following_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  followedAt: timestamp("followed_at").defaultNow(),
+}, (table) => ({
+  uniqueFollowerFollowing: sql`UNIQUE(${table.followerId}, ${table.followingId})`,
+}));
+
+// Prompt Likes System
+export const promptLikes = pgTable("prompt_likes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  promptId: varchar("prompt_id").notNull().references(() => prompts.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  likedAt: timestamp("liked_at").defaultNow(),
+}, (table) => ({
+  uniquePromptUser: sql`UNIQUE(${table.promptId}, ${table.userId})`,
+}));
+
+// Notification System
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: varchar("type", { length: 50 }).notNull(), // 'like', 'follow', 'share', 'comment', 'mention', 'system'
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  data: jsonb("data"), // Additional context data
+  readAt: timestamp("read_at"),
+  clickedAt: timestamp("clicked_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Subscription Tiers (Monetization Foundation)
+export const subscriptionTiers = pgTable("subscription_tiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 50 }).notNull(),
+  slug: varchar("slug", { length: 50 }).notNull().unique(),
+  priceMonthly: integer("price_monthly"), // in cents
+  priceYearly: integer("price_yearly"), // in cents
+  features: jsonb("features").notNull(), // feature flags and limits
+  maxPrompts: integer("max_prompts"),
+  maxCollections: integer("max_collections"),
+  maxCollaborators: integer("max_collaborators"),
+  aiEnhancementsMonthly: integer("ai_enhancements_monthly"),
+  prioritySupport: boolean("priority_support").default(false),
+  customBranding: boolean("custom_branding").default(false),
+  analyticsRetentionDays: integer("analytics_retention_days").default(30),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// User Subscriptions
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }).unique(),
+  tierId: varchar("tier_id").references(() => subscriptionTiers.id),
+  status: varchar("status", { length: 20 }).default('active'), // 'active', 'cancelled', 'expired', 'trial'
+  currentPeriodStart: timestamp("current_period_start").notNull(),
+  currentPeriodEnd: timestamp("current_period_end").notNull(),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+  stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Usage Tracking
+export const usageMetrics = pgTable("usage_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  metricType: varchar("metric_type", { length: 50 }).notNull(), // 'prompts_created', 'ai_enhancements', 'storage_used'
+  value: integer("value").notNull(),
+  periodStart: timestamp("period_start").notNull(), // Changed from DATE to TIMESTAMP
+  periodEnd: timestamp("period_end").notNull(), // Changed from DATE to TIMESTAMP
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  uniqueUserMetricPeriod: sql`UNIQUE(${table.userId}, ${table.metricType}, ${table.periodStart})`,
+}));
+
+// Search History & Suggestions
+export const searchHistory = pgTable("search_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }),
+  query: text("query").notNull(),
+  resultsCount: integer("results_count"),
+  clickedResultId: varchar("clicked_result_id"),
+  clickedResultType: varchar("clicked_result_type", { length: 20 }), // 'prompt', 'user', 'collection'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Report & Moderation System
+export const contentReports = pgTable("content_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reporterUserId: varchar("reporter_user_id").references(() => users.id, { onDelete: 'set null' }),
+  contentType: varchar("content_type", { length: 20 }).notNull(), // 'prompt', 'user', 'collection', 'comment'
+  contentId: varchar("content_id").notNull(),
+  reason: varchar("reason", { length: 50 }).notNull(), // 'spam', 'inappropriate', 'copyright', 'other'
+  description: text("description"),
+  status: varchar("status", { length: 20 }).default('pending'), // 'pending', 'reviewed', 'resolved', 'dismissed'
+  moderatorId: varchar("moderator_id").references(() => users.id),
+  moderatorNotes: text("moderator_notes"),
+  actionTaken: varchar("action_taken", { length: 50 }), // 'removed', 'warned', 'banned', 'no_action'
+  createdAt: timestamp("created_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+// Activity Feed
+export const activityFeed = pgTable("activity_feed", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  actorUserId: varchar("actor_user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  action: varchar("action", { length: 50 }).notNull(), // 'created_prompt', 'liked', 'followed', 'shared'
+  targetType: varchar("target_type", { length: 20 }), // 'prompt', 'collection', 'user'
+  targetId: varchar("target_id"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// API Keys (for developer access)
+export const apiKeys = pgTable("api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: varchar("name", { length: 100 }).notNull(),
+  keyHash: varchar("key_hash", { length: 255 }).notNull().unique(),
+  lastFour: varchar("last_four", { length: 4 }).notNull(),
+  permissions: jsonb("permissions").default(sql`'["read"]'`),
+  rateLimit: integer("rate_limit").default(1000), // requests per hour
+  lastUsedAt: timestamp("last_used_at"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+});
+
+// Backups & Export Jobs
+export const exportJobs = pgTable("export_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  exportType: varchar("export_type", { length: 20 }).notNull(), // 'full', 'prompts', 'collections'
+  format: varchar("format", { length: 10 }).notNull(), // 'json', 'csv', 'markdown'
+  status: varchar("status", { length: 20 }).default('pending'), // 'pending', 'processing', 'completed', 'failed'
+  fileUrl: varchar("file_url", { length: 500 }),
+  fileSize: integer("file_size"),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// System Health Metrics
+export const systemMetrics = pgTable("system_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  metricName: varchar("metric_name", { length: 100 }).notNull(),
+  value: varchar("value", { length: 20 }).notNull(), // Using varchar to handle both numeric and string values
+  unit: varchar("unit", { length: 20 }),
+  timestamp: timestamp("timestamp").defaultNow(),
+  metadata: jsonb("metadata"),
+});
+
 // Frontend-specific schema (without userId - added by backend auth)
 export const createPromptSchema = insertPromptSchema.omit({ userId: true });
 export type CreatePrompt = z.infer<typeof createPromptSchema>;
@@ -515,6 +676,150 @@ export type CreateCollabSession = z.infer<typeof createCollabSessionSchema>;
 
 export const createCollabContributionSchema = insertCollabContributionSchema.omit({ userId: true });
 export type CreateCollabContribution = z.infer<typeof createCollabContributionSchema>;
+
+// Phase 4: Insert schemas for enterprise features
+export const insertUserFollowSchema = createInsertSchema(userFollows).pick({
+  followerId: true,
+  followingId: true,
+});
+
+export const insertPromptLikeSchema = createInsertSchema(promptLikes).pick({
+  promptId: true,
+  userId: true,
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).pick({
+  userId: true,
+  type: true,
+  title: true,
+  message: true,
+  data: true,
+});
+
+export const insertSubscriptionTierSchema = createInsertSchema(subscriptionTiers).pick({
+  name: true,
+  slug: true,
+  priceMonthly: true,
+  priceYearly: true,
+  features: true,
+  maxPrompts: true,
+  maxCollections: true,
+  maxCollaborators: true,
+  aiEnhancementsMonthly: true,
+  prioritySupport: true,
+  customBranding: true,
+  analyticsRetentionDays: true,
+});
+
+export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions).pick({
+  userId: true,
+  tierId: true,
+  status: true,
+  currentPeriodStart: true,
+  currentPeriodEnd: true,
+  cancelAtPeriodEnd: true,
+  stripeCustomerId: true,
+  stripeSubscriptionId: true,
+});
+
+export const insertUsageMetricSchema = createInsertSchema(usageMetrics).pick({
+  userId: true,
+  metricType: true,
+  value: true,
+  periodStart: true,
+  periodEnd: true,
+});
+
+export const insertSearchHistorySchema = createInsertSchema(searchHistory).pick({
+  userId: true,
+  query: true,
+  resultsCount: true,
+  clickedResultId: true,
+  clickedResultType: true,
+});
+
+export const insertContentReportSchema = createInsertSchema(contentReports).pick({
+  reporterUserId: true,
+  contentType: true,
+  contentId: true,
+  reason: true,
+  description: true,
+});
+
+export const insertActivityFeedSchema = createInsertSchema(activityFeed).pick({
+  userId: true,
+  actorUserId: true,
+  action: true,
+  targetType: true,
+  targetId: true,
+  metadata: true,
+});
+
+export const insertApiKeySchema = createInsertSchema(apiKeys).pick({
+  userId: true,
+  name: true,
+  keyHash: true,
+  lastFour: true,
+  permissions: true,
+  rateLimit: true,
+  expiresAt: true,
+});
+
+export const insertExportJobSchema = createInsertSchema(exportJobs).pick({
+  userId: true,
+  exportType: true,
+  format: true,
+  status: true,
+});
+
+export const insertSystemMetricSchema = createInsertSchema(systemMetrics).pick({
+  metricName: true,
+  value: true,
+  unit: true,
+  metadata: true,
+});
+
+// Phase 4: TypeScript types for enterprise features
+export type InsertUserFollow = z.infer<typeof insertUserFollowSchema>;
+export type UserFollow = typeof userFollows.$inferSelect;
+export type InsertPromptLike = z.infer<typeof insertPromptLikeSchema>;
+export type PromptLike = typeof promptLikes.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertSubscriptionTier = z.infer<typeof insertSubscriptionTierSchema>;
+export type SubscriptionTier = typeof subscriptionTiers.$inferSelect;
+export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema>;
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+export type InsertUsageMetric = z.infer<typeof insertUsageMetricSchema>;
+export type UsageMetric = typeof usageMetrics.$inferSelect;
+export type InsertSearchHistory = z.infer<typeof insertSearchHistorySchema>;
+export type SearchHistory = typeof searchHistory.$inferSelect;
+export type InsertContentReport = z.infer<typeof insertContentReportSchema>;
+export type ContentReport = typeof contentReports.$inferSelect;
+export type InsertActivityFeed = z.infer<typeof insertActivityFeedSchema>;
+export type ActivityFeed = typeof activityFeed.$inferSelect;
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertExportJob = z.infer<typeof insertExportJobSchema>;
+export type ExportJob = typeof exportJobs.$inferSelect;
+export type InsertSystemMetric = z.infer<typeof insertSystemMetricSchema>;
+export type SystemMetric = typeof systemMetrics.$inferSelect;
+
+// Phase 4: Frontend create schemas (without auto-filled fields)
+export const createNotificationSchema = insertNotificationSchema.omit({ userId: true });
+export type CreateNotification = z.infer<typeof createNotificationSchema>;
+
+export const createContentReportSchema = insertContentReportSchema.omit({ reporterUserId: true });
+export type CreateContentReport = z.infer<typeof createContentReportSchema>;
+
+export const createActivityFeedSchema = insertActivityFeedSchema.omit({ userId: true, actorUserId: true });
+export type CreateActivityFeed = z.infer<typeof createActivityFeedSchema>;
+
+export const createApiKeySchema = insertApiKeySchema.omit({ userId: true, keyHash: true, lastFour: true });
+export type CreateApiKey = z.infer<typeof createApiKeySchema>;
+
+export const createExportJobSchema = insertExportJobSchema.omit({ userId: true, status: true });
+export type CreateExportJob = z.infer<typeof createExportJobSchema>;
 
 // Auth schemas
 export const loginSchema = z.object({
