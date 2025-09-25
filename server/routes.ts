@@ -2329,6 +2329,443 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========================================
+  // Phase 3: Collaborative Sessions API
+  // ========================================
+
+  // POST /api/collab/sessions - Create a new collaboration session
+  app.post("/api/collab/sessions", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      // Validate request body using Zod schema
+      const createSessionSchema = insertCollabSessionSchema.extend({
+        promptId: z.string().min(1, 'promptId is required')
+      });
+      
+      const validation = createSessionSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: 'Invalid input',
+          errors: validation.error.errors
+        });
+      }
+      
+      const { promptId, title, description, maxParticipants = 5 } = validation.data;
+
+      // Verify user owns the prompt
+      const [prompt] = await drizzleDB
+        .select()
+        .from(prompts)
+        .where(and(eq(prompts.id, promptId), eq(prompts.userId, userId)));
+        
+      if (!prompt) {
+        return res.status(404).json({ message: 'Prompt not found or access denied' });
+      }
+
+      // Create collaboration session (let DB generate UUID)
+      const [session] = await drizzleDB
+        .insert(collabSessions)
+        .values({
+          originalPromptId: promptId,
+          createdByUserId: userId,
+          title,
+          description: description || null,
+          maxParticipants,
+          status: 'active',
+          sessionCode: nanoid(8)
+        })
+        .returning();
+
+      // Add host as first participant  
+      await drizzleDB
+        .insert(collabParticipants)
+        .values({
+          sessionId: session.id,
+          userId,
+          role: 'host'
+        });
+
+      res.status(201).json({ session });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error creating collaboration session:', error);
+      res.status(500).json({ message: 'Failed to create collaboration session' });
+    }
+  });
+
+  // GET /api/collab/sessions - List user's collaboration sessions
+  app.get("/api/collab/sessions", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { status = 'active' } = req.query;
+
+      // Get sessions where user is participant or host
+      const sessions = await drizzleDB
+        .select({
+          session: collabSessions,
+          hostUser: {
+            username: users.username,
+            email: users.email
+          },
+          prompt: {
+            title: prompts.title,
+            platform: prompts.platform
+          },
+          participantCount: sql<number>`COUNT(DISTINCT ${collabParticipants.userId})`,
+          userRole: collabParticipants.role
+        })
+        .from(collabSessions)
+        .innerJoin(collabParticipants, eq(collabParticipants.sessionId, collabSessions.id))
+        .innerJoin(users, eq(users.id, collabSessions.createdByUserId))
+        .innerJoin(prompts, eq(prompts.id, collabSessions.originalPromptId))
+        .where(and(
+          eq(collabParticipants.userId, userId),
+          eq(collabSessions.status, status as string)
+        ))
+        .groupBy(
+          collabSessions.id,
+          users.username,
+          users.email,
+          prompts.title,
+          prompts.platform,
+          collabParticipants.role
+        );
+
+      res.json({ sessions });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching collaboration sessions:', error);
+      res.status(500).json({ message: 'Failed to fetch collaboration sessions' });
+    }
+  });
+
+  // GET /api/collab/sessions/:id - Get specific collaboration session
+  app.get("/api/collab/sessions/:id", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { id } = req.params;
+
+      // Verify user is participant in session
+      const [participant] = await drizzleDB
+        .select()
+        .from(collabParticipants)
+        .where(and(eq(collabParticipants.sessionId, id), eq(collabParticipants.userId, userId)));
+
+      if (!participant) {
+        return res.status(403).json({ message: 'Access denied - not a session participant' });
+      }
+
+      // Get session details with participants
+      const [session] = await drizzleDB
+        .select({
+          session: collabSessions,
+          hostUser: {
+            username: users.username,
+            email: users.email
+          },
+          prompt: {
+            title: prompts.title,
+            platform: prompts.platform,
+            content: prompts.content
+          }
+        })
+        .from(collabSessions)
+        .innerJoin(users, eq(users.id, collabSessions.createdByUserId))
+        .innerJoin(prompts, eq(prompts.id, collabSessions.originalPromptId))
+        .where(eq(collabSessions.id, id));
+
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+
+      // Get all participants
+      const participants = await drizzleDB
+        .select({
+          user: {
+            id: users.id,
+            username: users.username,
+            email: users.email
+          },
+          role: collabParticipants.role,
+          joinedAt: collabParticipants.joinedAt
+        })
+        .from(collabParticipants)
+        .innerJoin(users, eq(users.id, collabParticipants.userId))
+        .where(eq(collabParticipants.sessionId, id));
+
+      res.json({ 
+        ...session,
+        participants 
+      });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching collaboration session:', error);
+      res.status(500).json({ message: 'Failed to fetch collaboration session' });
+    }
+  });
+
+  // POST /api/collab/sessions/:id/join - Join a collaboration session  
+  app.post("/api/collab/sessions/:id/join", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { id } = req.params;
+      
+      // Validate session ID parameter
+      if (!id || typeof id !== 'string') {
+        return res.status(400).json({ message: 'Valid session ID is required' });
+      }
+
+      // Check if session exists and is active
+      const [session] = await drizzleDB
+        .select()
+        .from(collabSessions)
+        .where(eq(collabSessions.id, id));
+
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+
+      if (session.status !== 'active') {
+        return res.status(400).json({ message: 'Session is not active' });
+      }
+
+      // Check if already participant
+      const [existingParticipant] = await drizzleDB
+        .select()
+        .from(collabParticipants)
+        .where(and(eq(collabParticipants.sessionId, id), eq(collabParticipants.userId, userId)));
+
+      if (existingParticipant) {
+        // Reactivate participant if was inactive
+        await drizzleDB
+          .update(collabParticipants)
+          .set({ lastActiveAt: new Date() })
+          .where(and(eq(collabParticipants.sessionId, id), eq(collabParticipants.userId, userId)));
+        
+        return res.json({ message: 'Joined session successfully' });
+      }
+
+      // Check participant limit
+      const [participantCount] = await drizzleDB
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(collabParticipants)
+        .where(eq(collabParticipants.sessionId, id));
+
+      if (participantCount.count >= session.maxParticipants) {
+        return res.status(400).json({ message: 'Session is full' });
+      }
+
+      // Add user as participant with unique constraint protection
+      try {
+        await drizzleDB
+          .insert(collabParticipants)
+          .values({
+            sessionId: id,
+            userId,
+            role: 'contributor'
+          });
+      } catch (dbError: any) {
+        if (dbError.code === '23505') { // Unique constraint violation
+          return res.status(400).json({ message: 'User already participant in session' });
+        }
+        throw dbError;
+      }
+
+      res.json({ message: 'Joined session successfully' });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error joining collaboration session:', error);
+      res.status(500).json({ message: 'Failed to join collaboration session' });
+    }
+  });
+
+  // POST /api/collab/sessions/:id/contributions - Add contribution to session
+  app.post("/api/collab/sessions/:id/contributions", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { id } = req.params;
+      
+      // Validate request body using Zod schema
+      const validation = insertCollabContributionSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: 'Invalid input',
+          errors: validation.error.errors
+        });
+      }
+      
+      const { contributionType, content } = validation.data;
+
+      // Verify user is active participant
+      const [participant] = await drizzleDB
+        .select()
+        .from(collabParticipants)
+        .where(and(
+          eq(collabParticipants.sessionId, id), 
+          eq(collabParticipants.userId, userId)
+        ));
+
+      if (!participant) {
+        return res.status(403).json({ message: 'Access denied - not an active participant' });
+      }
+
+      // Add contribution
+      const [contribution] = await drizzleDB
+        .insert(collabContributions)
+        .values({
+          sessionId: id,
+          userId,
+          contributionType,
+          content
+        })
+        .returning();
+
+      // Update session's last activity
+      await drizzleDB
+        .update(collabSessions)
+        .set({ completedAt: new Date() })
+        .where(eq(collabSessions.id, id));
+
+      res.status(201).json({ contribution });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error adding contribution:', error);
+      res.status(500).json({ message: 'Failed to add contribution' });
+    }
+  });
+
+  // GET /api/collab/sessions/:id/contributions - Get session contributions
+  app.get("/api/collab/sessions/:id/contributions", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { id } = req.params;
+
+      // Verify user is participant
+      const [participant] = await drizzleDB
+        .select()
+        .from(collabParticipants)
+        .where(and(eq(collabParticipants.sessionId, id), eq(collabParticipants.userId, userId)));
+
+      if (!participant) {
+        return res.status(403).json({ message: 'Access denied - not a session participant' });
+      }
+
+      // Get contributions with user details
+      const contributions = await drizzleDB
+        .select({
+          contribution: collabContributions,
+          user: {
+            username: users.username,
+            email: users.email
+          }
+        })
+        .from(collabContributions)
+        .innerJoin(users, eq(users.id, collabContributions.userId))
+        .where(eq(collabContributions.sessionId, id))
+        .orderBy(collabContributions.createdAt);
+
+      res.json({ contributions });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching contributions:', error);
+      res.status(500).json({ message: 'Failed to fetch contributions' });
+    }
+  });
+
+  // PUT /api/collab/sessions/:id/content - Update session content (HOST ONLY)
+  app.put("/api/collab/sessions/:id/content", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { id } = req.params;
+      
+      // Validate content input
+      if (!req.body.content || typeof req.body.content !== 'string') {
+        return res.status(400).json({ message: 'Valid content string is required' });
+      }
+      
+      const { content } = req.body;
+
+      // Verify user is session HOST (not just participant)
+      const [session] = await drizzleDB
+        .select()
+        .from(collabSessions)
+        .where(and(eq(collabSessions.id, id), eq(collabSessions.createdByUserId, userId)));
+
+      if (!session) {
+        return res.status(403).json({ message: 'Access denied - only session host can update content' });
+      }
+
+      // Update session content (host permission already verified)
+      const [updated] = await drizzleDB
+        .update(collabSessions)
+        .set({ 
+          status: 'active' // Keep session active during editing
+        })
+        .where(eq(collabSessions.id, id))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+
+      res.json({ message: 'Content updated successfully', session: updated });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error updating session content:', error);
+      res.status(500).json({ message: 'Failed to update session content' });
+    }
+  });
+
+  // POST /api/collab/sessions/:id/close - Close collaboration session
+  app.post("/api/collab/sessions/:id/close", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { id } = req.params;
+
+      // Verify user is session host
+      const [session] = await drizzleDB
+        .select()
+        .from(collabSessions)
+        .where(and(eq(collabSessions.id, id), eq(collabSessions.createdByUserId, userId)));
+
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found or access denied' });
+      }
+
+      // Close session and set completion timestamp
+      await drizzleDB
+        .update(collabSessions)
+        .set({ 
+          status: 'completed',
+          completedAt: new Date()
+        })
+        .where(eq(collabSessions.id, id));
+
+      res.json({ message: 'Session closed successfully' });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error closing session:', error);
+      res.status(500).json({ message: 'Failed to close session' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
