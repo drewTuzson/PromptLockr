@@ -1572,6 +1572,157 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Explore API routes for mobile/PWA functionality
+  app.get("/api/explore", async (req, res) => {
+    try {
+      const { category, search } = req.query;
+      
+      // Build where conditions
+      let whereConditions = [eq(prompts.isPublic, true)];
+      
+      // Apply category filter if specified
+      if (category && category !== 'all') {
+        whereConditions.push(ilike(prompts.platform, `%${category}%`));
+      }
+
+      // Apply search filter if specified
+      if (search) {
+        const searchTerm = `%${search}%`;
+        whereConditions.push(
+          or(
+            ilike(prompts.title, searchTerm),
+            ilike(prompts.content, searchTerm)
+          )
+        );
+      }
+
+      const baseWhere = and(...whereConditions);
+
+      // Get trending (recent with high engagement - simplified)
+      const trending = await drizzleDB.select({
+        id: prompts.id,
+        title: prompts.title,
+        content: prompts.content,
+        platform: prompts.platform,
+        tags: prompts.tags,
+        isPublic: prompts.isPublic,
+        isFavorite: prompts.isFavorite,
+        createdAt: prompts.createdAt,
+        userId: prompts.userId
+      })
+      .from(prompts)
+      .where(baseWhere)
+      .orderBy(desc(prompts.createdAt))
+      .limit(10);
+
+      // Get newest
+      const newest = await drizzleDB.select({
+        id: prompts.id,
+        title: prompts.title,
+        content: prompts.content,
+        platform: prompts.platform,
+        tags: prompts.tags,
+        isPublic: prompts.isPublic,
+        isFavorite: prompts.isFavorite,
+        createdAt: prompts.createdAt,
+        userId: prompts.userId
+      })
+      .from(prompts)
+      .where(baseWhere)
+      .orderBy(desc(prompts.createdAt))
+      .limit(10);
+
+      // Get popular (favorites - simplified)
+      const popular = await drizzleDB.select({
+        id: prompts.id,
+        title: prompts.title,
+        content: prompts.content,
+        platform: prompts.platform,
+        tags: prompts.tags,
+        isPublic: prompts.isPublic,
+        isFavorite: prompts.isFavorite,
+        createdAt: prompts.createdAt,
+        userId: prompts.userId
+      })
+      .from(prompts)
+      .where(and(baseWhere, eq(prompts.isFavorite, true)))
+      .orderBy(desc(prompts.createdAt))
+      .limit(10);
+
+      // Add mock engagement data for now
+      const addEngagementData = (promptsList: any[]) => {
+        return promptsList.map(prompt => ({
+          ...prompt,
+          likeCount: Math.floor(Math.random() * 50),
+          saveCount: Math.floor(Math.random() * 30),
+          remixCount: Math.floor(Math.random() * 10),
+          isLiked: false,
+          isSaved: false,
+          user: {
+            id: prompt.userId,
+            username: `user_${prompt.userId.slice(0, 8)}`,
+            displayName: `User ${prompt.userId.slice(0, 8)}`,
+            hasCustomAvatar: false,
+            avatarGeneratedColor: '#98D8C8'
+          }
+        }));
+      };
+
+      res.json({
+        trending: addEngagementData(trending),
+        newest: addEngagementData(newest),
+        popular: addEngagementData(popular)
+      });
+    } catch (error) {
+      console.error('Explore API error:', error);
+      res.status(500).json({ error: 'Failed to fetch explore data' });
+    }
+  });
+
+  // Like/unlike prompt
+  app.post("/api/prompts/:id/like", async (req, res) => {
+    try {
+      const authUser = requireAuth(req);
+      const { id } = req.params;
+
+      // For now, just return success - actual implementation would require likes table
+      // This is a placeholder for the mobile functionality
+      res.json({ 
+        success: true, 
+        liked: true,
+        likeCount: Math.floor(Math.random() * 50) + 1
+      });
+    } catch (error) {
+      console.error('Like prompt error:', error);
+      if (error instanceof Error && error.message === 'Unauthorized') {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      res.status(500).json({ error: 'Failed to like prompt' });
+    }
+  });
+
+  // Save/unsave prompt
+  app.post("/api/prompts/:id/save", async (req, res) => {
+    try {
+      const authUser = requireAuth(req);
+      const { id } = req.params;
+
+      // For now, just return success - actual implementation would require saves table
+      // This is a placeholder for the mobile functionality
+      res.json({ 
+        success: true, 
+        saved: true,
+        saveCount: Math.floor(Math.random() * 30) + 1
+      });
+    } catch (error) {
+      console.error('Save prompt error:', error);
+      if (error instanceof Error && error.message === 'Unauthorized') {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      res.status(500).json({ error: 'Failed to save prompt' });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
