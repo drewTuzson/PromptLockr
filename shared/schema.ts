@@ -187,6 +187,11 @@ export const insertPromptSchema = createInsertSchema(prompts).pick({
   tags: true,
   folderId: true,
   isFavorite: true,
+  isPublic: true,
+  viewCount: true,
+  likeCount: true,
+  saveCount: true,
+  remixCount: true,
 });
 
 export const insertEnhancementSessionSchema = createInsertSchema(enhancementSessions).pick({

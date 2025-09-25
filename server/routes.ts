@@ -1,7 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks } from "@shared/schema";
+import { validateUsername, generateAvatar } from "@shared/avatarUtils";
+import { nanoid } from "nanoid";
 import { z } from "zod";
 import { ReplitDBAdapter } from "../lib/db/replit-db";
 import { AuthService } from "../lib/auth/jwt-auth";
@@ -17,7 +19,7 @@ import { templateEngine } from "./services/templateEngine.js";
 const replitDB = new ReplitDBAdapter();
 const healthDB = new Database();
 
-function requireAuth(req: any): { userId: string; email: string } {
+function requireAuth(req: any): { userId: string; email: string; username?: string } {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     throw new Error('Unauthorized');
@@ -1298,6 +1300,241 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error('Error fetching template usage:', error);
       res.status(500).json({ message: 'Failed to fetch template usage' });
+    }
+  });
+
+  // Username management
+  app.get("/api/users/check-username", async (req, res) => {
+    try {
+      const { username } = req.query;
+      if (!username || typeof username !== 'string') {
+        return res.status(400).json({ error: 'Username required' });
+      }
+
+      const validation = validateUsername(username);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error, available: false });
+      }
+
+      const existing = await drizzleDB.select().from(users)
+        .where(eq(users.username, username.toLowerCase())).limit(1);
+
+      res.json({ available: existing.length === 0, username: username.toLowerCase() });
+    } catch (error) {
+      console.error('Username check error:', error);
+      res.status(500).json({ error: 'Failed to check username' });
+    }
+  });
+
+  // User search for @mentions
+  app.get("/api/users/search", async (req, res) => {
+    try {
+      const authUser = requireAuth(req);
+      const { q } = req.query;
+
+      if (!q || typeof q !== 'string' || q.length < 2) {
+        return res.json({ users: [] });
+      }
+
+      const searchTerm = `%${q}%`;
+      const searchResults = await drizzleDB.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatar40Url: users.avatar40Url,
+        avatar80Url: users.avatar80Url,
+        hasCustomAvatar: users.hasCustomAvatar,
+        avatarGeneratedColor: users.avatarGeneratedColor
+      }).from(users)
+      .where(
+        and(
+          or(
+            ilike(users.username, searchTerm),
+            ilike(users.displayName, searchTerm)
+          )
+        )
+      ).limit(10);
+
+      res.json({ users: searchResults });
+    } catch (error) {
+      console.error('User search error:', error);
+      res.status(500).json({ error: 'Search failed' });
+    }
+  });
+
+  // Update user profile
+  app.put("/api/users/profile", async (req, res) => {
+    try {
+      const authUser = requireAuth(req);
+      const { username, displayName, bio } = req.body;
+
+      let updateData: any = {};
+
+      if (displayName !== undefined) updateData.displayName = displayName;
+      if (bio !== undefined) updateData.bio = bio;
+
+      if (username && username !== authUser.username) {
+        const validation = validateUsername(username);
+        if (!validation.valid) {
+          return res.status(400).json({ error: validation.error });
+        }
+
+        const existing = await drizzleDB.select().from(users)
+          .where(eq(users.username, username.toLowerCase())).limit(1);
+
+        if (existing.length > 0) {
+          return res.status(400).json({ error: 'Username already taken' });
+        }
+
+        updateData.username = username.toLowerCase();
+        updateData.createdUsernameAt = new Date();
+      }
+
+      const updated = await drizzleDB.update(users)
+        .set(updateData)
+        .where(eq(users.id, authUser.userId))
+        .returning();
+
+      res.json({ user: updated[0] });
+    } catch (error) {
+      console.error('Profile update error:', error);
+      res.status(500).json({ error: 'Failed to update profile' });
+    }
+  });
+
+  // Generate avatar
+  app.post("/api/users/avatar/generate", async (req, res) => {
+    try {
+      const authUser = requireAuth(req);
+
+      const user = await drizzleDB.select().from(users)
+        .where(eq(users.id, authUser.userId)).limit(1);
+
+      if (!user[0]) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const avatar = generateAvatar(user[0].displayName || '', user[0].username || '');
+
+      await drizzleDB.update(users)
+        .set({
+          avatarGeneratedColor: avatar.backgroundColor,
+          hasCustomAvatar: false,
+          avatarUrl: null,
+          avatar40Url: null,
+          avatar80Url: null,
+          avatar160Url: null,
+          avatar320Url: null,
+          avatarUpdatedAt: new Date()
+        })
+        .where(eq(users.id, authUser.userId));
+
+      res.json({ avatar });
+    } catch (error) {
+      console.error('Avatar generation error:', error);
+      res.status(500).json({ error: 'Failed to generate avatar' });
+    }
+  });
+
+  // Toggle prompt privacy
+  app.put("/api/prompts/:id/privacy", async (req, res) => {
+    try {
+      const authUser = requireAuth(req);
+      const { id } = req.params;
+      const { isPublic } = req.body;
+
+      const updated = await drizzleDB.update(prompts)
+        .set({ isPublic: !!isPublic })
+        .where(and(eq(prompts.id, id), eq(prompts.userId, authUser.userId)))
+        .returning();
+
+      if (!updated[0]) {
+        return res.status(404).json({ error: 'Prompt not found' });
+      }
+
+      res.json({ prompt: updated[0] });
+    } catch (error) {
+      console.error('Privacy toggle error:', error);
+      res.status(500).json({ error: 'Failed to update privacy' });
+    }
+  });
+
+  // Share prompt with user
+  app.post("/api/prompts/:id/share", async (req, res) => {
+    try {
+      const authUser = requireAuth(req);
+      const { id } = req.params;
+      const { sharedWithUserId, permission = 'view', expiresAt } = req.body;
+
+      // Verify prompt ownership
+      const [prompt] = await drizzleDB.select().from(prompts)
+        .where(and(eq(prompts.id, id), eq(prompts.userId, authUser.userId)));
+
+      if (!prompt) {
+        return res.status(404).json({ error: 'Prompt not found' });
+      }
+
+      // Verify shared with user exists
+      const [sharedWithUser] = await drizzleDB.select().from(users)
+        .where(eq(users.id, sharedWithUserId));
+
+      if (!sharedWithUser) {
+        return res.status(404).json({ error: 'User to share with not found' });
+      }
+
+      // Create share
+      const [share] = await drizzleDB.insert(promptShares)
+        .values({
+          promptId: id,
+          sharedByUserId: authUser.userId,
+          sharedWithUserId,
+          permission,
+          expiresAt: expiresAt ? new Date(expiresAt) : null
+        })
+        .returning();
+
+      res.json({ share });
+    } catch (error) {
+      console.error('Share prompt error:', error);
+      res.status(500).json({ error: 'Failed to share prompt' });
+    }
+  });
+
+  // Create share link
+  app.post("/api/prompts/:id/share-link", async (req, res) => {
+    try {
+      const authUser = requireAuth(req);
+      const { id } = req.params;
+      const { permission = 'view', password, maxAccessCount, expiresAt } = req.body;
+
+      // Verify prompt ownership
+      const [prompt] = await drizzleDB.select().from(prompts)
+        .where(and(eq(prompts.id, id), eq(prompts.userId, authUser.userId)));
+
+      if (!prompt) {
+        return res.status(404).json({ error: 'Prompt not found' });
+      }
+
+      const shareCode = nanoid(12);
+      const passwordHash = password ? await AuthService.hashPassword(password) : null;
+
+      const [shareLink] = await drizzleDB.insert(shareLinks)
+        .values({
+          resourceType: 'prompt',
+          resourceId: id,
+          shareCode,
+          createdByUserId: authUser.userId,
+          permission,
+          passwordHash,
+          maxAccessCount,
+          expiresAt: expiresAt ? new Date(expiresAt) : null
+        })
+        .returning();
+
+      res.json({ shareLink: { ...shareLink, passwordHash: undefined } });
+    } catch (error) {
+      console.error('Create share link error:', error);
+      res.status(500).json({ error: 'Failed to create share link' });
     }
   });
 
