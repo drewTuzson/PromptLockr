@@ -12,12 +12,82 @@ import { db as drizzleDB } from "./db.js";
 import { prompts } from "@shared/schema";
 import { validateAndSanitizeFilters } from "./utils/filterValidation.js";
 import { buildFilterConditions, buildOrderBy } from "./utils/filterQueryBuilder.js";
-import { sql, eq, and, or, desc, ilike, isNotNull, isNull } from "drizzle-orm";
+import { sql, eq, and, or, desc, ilike, isNotNull, isNull, inArray } from "drizzle-orm";
 import { claudeService } from "./services/claudeService.js";
 import { templateEngine } from "./services/templateEngine.js";
 
 const replitDB = new ReplitDBAdapter();
 const healthDB = new Database();
+
+// Quality scoring algorithm for Phase 3 AI Enhancement
+function analyzePromptQuality(content: string) {
+  const words = content.trim().split(/\s+/);
+  const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  const length = content.length;
+
+  // Clarity Analysis (0-10)
+  let clarity = 5;
+  if (words.length >= 10) clarity += 2;
+  if (words.length >= 20) clarity += 1;
+  if (sentences.length >= 2) clarity += 1;
+  if (content.includes('?')) clarity += 1;
+  clarity = Math.min(clarity, 10);
+
+  // Specificity Analysis (0-10)
+  let specificity = 3;
+  const specificWords = ['specific', 'detailed', 'exactly', 'precisely', 'particular', 'step-by-step'];
+  const hasSpecificWords = specificWords.some(word => content.toLowerCase().includes(word));
+  if (hasSpecificWords) specificity += 2;
+  if (words.length >= 30) specificity += 2;
+  if (content.includes('example') || content.includes('for instance')) specificity += 1;
+  if (/\d+/.test(content)) specificity += 1; // Contains numbers
+  if (content.includes('"') || content.includes("'")) specificity += 1; // Contains quotes
+  specificity = Math.min(specificity, 10);
+
+  // Structure Analysis (0-10)
+  let structure = 4;
+  if (sentences.length >= 3) structure += 2;
+  if (content.includes('\n')) structure += 1;
+  if (content.includes(':') || content.includes(';')) structure += 1;
+  if (/^\d+\./.test(content) || content.includes('- ')) structure += 2; // Numbered or bulleted
+  structure = Math.min(structure, 10);
+
+  // Completeness Analysis (0-10)
+  let completeness = 4;
+  if (length >= 100) completeness += 2;
+  if (length >= 200) completeness += 2;
+  if (content.toLowerCase().includes('context') || content.toLowerCase().includes('background')) completeness += 1;
+  if (content.toLowerCase().includes('goal') || content.toLowerCase().includes('objective')) completeness += 1;
+  completeness = Math.min(completeness, 10);
+
+  // Calculate overall score (weighted average)
+  const overallScore = (clarity * 0.25) + (specificity * 0.3) + (structure * 0.2) + (completeness * 0.25);
+
+  // Generate recommendations
+  const recommendations = [];
+  if (clarity < 7) recommendations.push("Add clearer questions or instructions to improve clarity");
+  if (specificity < 7) recommendations.push("Include more specific details, examples, or constraints");
+  if (structure < 7) recommendations.push("Break down your prompt into clear sections or bullet points");
+  if (completeness < 7) recommendations.push("Provide more context or background information");
+
+  // Generate enhancement suggestions
+  const enhancementSuggestions = [];
+  if (words.length < 15) enhancementSuggestions.push("Consider expanding your prompt with more details");
+  if (!content.includes('?') && !content.includes('generate') && !content.includes('create')) {
+    enhancementSuggestions.push("Make your request more explicit with action words");
+  }
+  if (overallScore < 6) enhancementSuggestions.push("This prompt would benefit from AI enhancement");
+
+  return {
+    overallScore: Math.round(overallScore * 10) / 10,
+    clarity: Math.round(clarity * 10) / 10,
+    specificity: Math.round(specificity * 10) / 10,
+    structure: Math.round(structure * 10) / 10,
+    completeness: Math.round(completeness * 10) / 10,
+    recommendations,
+    enhancementSuggestions
+  };
+}
 
 function requireAuth(req: any): { userId: string; email: string; username?: string } {
   const authHeader = req.headers.authorization;
@@ -92,13 +162,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           email: email,
           passwordHash: passwordHash,
           createdAt: new Date(),
-          preferences: JSON.stringify({ theme: 'light' })
+          preferences: { theme: 'light' as const }
         }).onConflictDoUpdate({
           target: users.email,
           set: {
             id: replitUser.id,
             passwordHash: passwordHash,
-            preferences: JSON.stringify({ theme: 'light' })
+            preferences: { theme: 'light' as const }
           }
         });
       } catch (pgError) {
@@ -372,6 +442,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error('Error fetching recent prompts:', error);
       res.status(500).json({ message: "Failed to fetch recent prompts" });
+    }
+  });
+
+  // Phase 3: Enhancement Analytics API (must come before parameterized routes)
+  app.get("/api/prompts/enhancement-analytics", async (req, res) => {
+    try {
+      console.log('DEBUG: Analytics endpoint called');
+      const { userId } = requireAuth(req);
+      console.log('DEBUG: Analytics userId:', userId);
+
+      // Get enhancement statistics for user
+      const userPrompts = await drizzleDB.select({
+        id: prompts.id,
+        enhancementCount: prompts.enhancementCount,
+        totalEnhancements: prompts.totalEnhancements,
+        avgQualityScore: prompts.avgQualityScore,
+        lastEnhancedAt: prompts.lastEnhancedAt,
+        platform: prompts.platform,
+        createdAt: prompts.createdAt
+      })
+      .from(prompts)
+      .where(eq(prompts.userId, userId));
+
+      console.log('DEBUG: Analytics userPrompts count:', userPrompts.length);
+
+      // Calculate analytics
+      const totalPrompts = userPrompts.length;
+      const enhancedPrompts = userPrompts.filter(p => (p.enhancementCount || 0) > 0).length;
+      const totalEnhancements = userPrompts.reduce((sum, p) => sum + (p.totalEnhancements || 0), 0);
+      const avgEnhancementsPerPrompt = totalPrompts > 0 ? (totalEnhancements / totalPrompts).toFixed(1) : '0';
+
+      // Quality score analytics
+      const promptsWithScores = userPrompts.filter(p => p.avgQualityScore);
+      const avgQualityScore = promptsWithScores.length > 0 
+        ? (promptsWithScores.reduce((sum, p) => sum + parseFloat(p.avgQualityScore!), 0) / promptsWithScores.length).toFixed(1)
+        : null;
+
+      // Platform breakdown
+      const platformBreakdown = userPrompts.reduce((acc, p) => {
+        const platform = p.platform || 'Unknown';
+        acc[platform] = (acc[platform] || 0) + (p.totalEnhancements || 0);
+        return acc;
+      }, {} as Record<string, number>);
+
+      // Recent activity (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const recentEnhancements = userPrompts.filter(p => 
+        p.lastEnhancedAt && new Date(p.lastEnhancedAt) > thirtyDaysAgo
+      ).length;
+
+      res.json({
+        overview: {
+          totalPrompts,
+          enhancedPrompts,
+          enhancementRate: totalPrompts > 0 ? ((enhancedPrompts / totalPrompts) * 100).toFixed(1) : '0',
+          totalEnhancements,
+          avgEnhancementsPerPrompt,
+          avgQualityScore,
+          recentEnhancements
+        },
+        platformBreakdown,
+        trends: {
+          last30Days: recentEnhancements,
+          qualityImprovement: promptsWithScores.length > 0 ? 'Available' : 'No data'
+        }
+      });
+
+    } catch (error: any) {
+      console.error('DEBUG: Analytics endpoint error:', error);
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching enhancement analytics:', error);
+      res.status(500).json({ message: 'Failed to fetch enhancement analytics' });
     }
   });
 
@@ -917,6 +1063,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Failed to fetch enhancement history' });
     }
   });
+
+  // Phase 3: Quality Scoring API
+  app.post("/api/prompts/:id/analyze-quality", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const promptId = req.params.id;
+
+      const [prompt] = await drizzleDB.select()
+        .from(prompts)
+        .where(and(
+          eq(prompts.id, promptId),
+          eq(prompts.userId, userId)
+        ));
+
+      if (!prompt) {
+        return res.status(404).json({ message: 'Prompt not found' });
+      }
+
+      // Analyze prompt quality using built-in scoring algorithm
+      const qualityAnalysis = analyzePromptQuality(prompt.content);
+
+      // Update prompt with quality score
+      await drizzleDB.update(prompts)
+        .set({ 
+          avgQualityScore: qualityAnalysis.overallScore.toFixed(1),
+          updatedAt: new Date()
+        })
+        .where(eq(prompts.id, promptId));
+
+      res.json({
+        promptId,
+        qualityScore: qualityAnalysis.overallScore,
+        analysis: {
+          clarity: qualityAnalysis.clarity,
+          specificity: qualityAnalysis.specificity,
+          structure: qualityAnalysis.structure,
+          completeness: qualityAnalysis.completeness
+        },
+        recommendations: qualityAnalysis.recommendations,
+        enhancementSuggestions: qualityAnalysis.enhancementSuggestions
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error analyzing prompt quality:', error);
+      res.status(500).json({ message: 'Failed to analyze prompt quality' });
+    }
+  });
+
+  // Phase 3: Batch Enhancement API
+  app.post("/api/prompts/batch-enhance", async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { promptIds, options } = req.body;
+
+      if (!promptIds || !Array.isArray(promptIds) || promptIds.length === 0) {
+        return res.status(400).json({ message: 'Please provide valid prompt IDs' });
+      }
+
+      if (promptIds.length > 10) {
+        return res.status(400).json({ message: 'Maximum 10 prompts can be enhanced at once' });
+      }
+
+      // Check rate limit for batch operations
+      const rateLimitStatus = await claudeService.getRateLimitStatus(userId);
+      if (rateLimitStatus.remaining < promptIds.length) {
+        return res.status(429).json({
+          message: `Insufficient rate limit. You need ${promptIds.length} enhancements but have ${rateLimitStatus.remaining} remaining.`,
+          rateLimitStatus
+        });
+      }
+
+      // Get all prompts belonging to the user
+      const userPrompts = await drizzleDB.select()
+        .from(prompts)
+        .where(and(
+          inArray(prompts.id, promptIds),
+          eq(prompts.userId, userId)
+        ));
+
+      if (userPrompts.length !== promptIds.length) {
+        return res.status(404).json({ message: 'Some prompts not found or not accessible' });
+      }
+
+      const enhancementResults = [];
+
+      // Process each prompt
+      for (const prompt of userPrompts) {
+        try {
+          // Make Claude API call
+          const enhanceResult = await claudeService.callClaudeAPIOnly(
+            prompt.content,
+            { platform: options?.platform || prompt.platform || 'ChatGPT', tone: options?.tone, focus: options?.focus }
+          );
+
+          if (enhanceResult.success) {
+            // Update enhancement history
+            let existingHistory;
+            try {
+              existingHistory = prompt.enhancementHistory ? JSON.parse(prompt.enhancementHistory) : [];
+            } catch (error) {
+              existingHistory = [];
+            }
+
+            const sessionId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const newHistoryEntry = {
+              sessionId,
+              timestamp: new Date().toISOString(),
+              enhanced: enhanceResult.enhanced,
+              options: options || {},
+              isBatch: true
+            };
+
+            const updatedHistory = [newHistoryEntry, ...existingHistory].slice(0, 50);
+
+            await drizzleDB.update(prompts)
+              .set({
+                enhancementHistory: JSON.stringify(updatedHistory),
+                enhancementCount: (prompt.enhancementCount || 0) + 1,
+                totalEnhancements: (prompt.totalEnhancements || 0) + 1,
+                lastEnhancedAt: new Date(),
+                updatedAt: new Date()
+              })
+              .where(eq(prompts.id, prompt.id));
+
+            enhancementResults.push({
+              promptId: prompt.id,
+              status: 'success',
+              enhanced: enhanceResult.enhanced,
+              sessionId
+            });
+          } else {
+            enhancementResults.push({
+              promptId: prompt.id,
+              status: 'failed',
+              error: enhanceResult.error
+            });
+          }
+        } catch (error: any) {
+          enhancementResults.push({
+            promptId: prompt.id,
+            status: 'failed',
+            error: error.message
+          });
+        }
+      }
+
+      res.json({
+        processed: enhancementResults.length,
+        successful: enhancementResults.filter(r => r.status === 'success').length,
+        failed: enhancementResults.filter(r => r.status === 'failed').length,
+        results: enhancementResults
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error in batch enhancement:', error);
+      res.status(500).json({ message: 'Failed to perform batch enhancement' });
+    }
+  });
+
 
   // GET /api/enhancement/rate-limit - Check rate limit status
   app.get("/api/enhancement/rate-limit", async (req, res) => {
