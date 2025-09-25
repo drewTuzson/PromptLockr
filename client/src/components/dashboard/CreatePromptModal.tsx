@@ -494,7 +494,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                       <div
                         key={suggestion}
                         data-testid={`suggestion-${suggestion}`}
-                        className="px-3 py-2 cursor-pointer hover:bg-[var(--btn-hover-bg)] hover:text-[var(--btn-hover-text)] transition-colors text-sm border-b border-border last:border-b-0"
+                        className="px-3 py-2 cursor-pointer hover:bg-[var(--btn-hover-bg)] hover:text-[var(--btn-hover-fg)] transition-colors text-sm border-b border-border last:border-b-0"
                         onClick={() => selectSuggestion(suggestion)}
                       >
                         {suggestion}
@@ -518,6 +518,7 @@ export function CreatePromptModal({ isOpen, onClose, editingPrompt }: CreateProm
                 data-testid="button-save-prompt"
                 type="submit"
                 disabled={createPrompt.isPending || updatePrompt.isPending}
+                className="hover:bg-[var(--btn-active-bg)] hover:text-[var(--btn-active-fg)]"
               >
                 {editingPrompt ? 'Update Prompt' : 'Create Prompt'}
               </Button>

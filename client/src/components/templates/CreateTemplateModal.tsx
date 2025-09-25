@@ -546,6 +546,7 @@ export function CreateTemplateModal({
             onClick={handleSubmit}
             disabled={isSubmitting}
             data-testid="button-create"
+            className="hover:bg-[var(--btn-active-bg)] hover:text-[var(--btn-active-fg)]"
           >
             {isSubmitting ? 'Creating...' : 'Create Template'}
           </Button>

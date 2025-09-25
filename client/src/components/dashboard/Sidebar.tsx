@@ -42,7 +42,7 @@ export function Sidebar({ onCreatePrompt, onImport, className }: SidebarProps) {
           <Button
             data-testid="button-new-prompt"
             onClick={onCreatePrompt}
-            className="w-full py-2.5 px-4 rounded-lg font-medium flex items-center justify-center space-x-2"
+            className="w-full py-2.5 px-4 rounded-lg font-medium flex items-center justify-center space-x-2 hover:bg-[var(--btn-active-bg)] hover:text-[var(--btn-active-fg)]"
             variant="default"
           >
             <Plus className="w-4 h-4" />

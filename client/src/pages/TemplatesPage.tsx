@@ -130,7 +130,7 @@ export default function TemplatesPage() {
                   <Button
                     data-testid="button-create-template"
                     onClick={() => setShowCreateModal(true)}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 hover:bg-[var(--btn-active-bg)] hover:text-[var(--btn-active-fg)]"
                   >
                     <PlusIcon className="w-4 h-4" />
                     Create Template

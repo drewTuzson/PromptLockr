@@ -488,6 +488,7 @@ export default function FoldersPage() {
                 <Button
                   onClick={() => setIsCreateModalOpen(true)}
                   data-testid="button-new-folder"
+                  className="hover:bg-[var(--btn-active-bg)] hover:text-[var(--btn-active-fg)]"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   New Folder
