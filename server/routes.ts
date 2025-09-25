@@ -129,7 +129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Find user
+      // Get user from Replit DB
       const user = await replitDB.getUserByEmail(email);
       if (!user) {
         return res.status(401).json({
@@ -143,6 +143,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({
           error: 'Invalid credentials'
         });
+      }
+
+      // SYNC TO POSTGRESQL - Ensure user exists for Epic 6 features
+      try {
+        await drizzleDB.insert(users).values({
+          id: user.id,
+          email: user.email,
+          passwordHash: user.passwordHash,
+          createdAt: new Date(user.createdAt),
+          preferences: JSON.stringify(user.preferences || { theme: 'light' })
+        }).onConflictDoUpdate({
+          target: users.id,
+          set: {
+            email: user.email,
+            preferences: JSON.stringify(user.preferences || { theme: 'light' })
+          }
+        });
+      } catch (pgError) {
+        console.error('PostgreSQL sync error during login:', pgError);
+        // Continue with login even if sync fails
       }
 
       // Generate token
@@ -159,7 +179,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Login error:', error);
       res.status(500).json({
-        error: 'Failed to login'
+        error: 'Login failed'
       });
     }
   });
