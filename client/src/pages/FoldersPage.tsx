@@ -50,8 +50,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useToast } from '@/hooks/use-toast';
 import { AuthService } from '@/lib/auth';
 import { cn } from '@/lib/utils';
-import { PageLayout } from '@/components/ui/page-layout';
-import { MobileLayout } from '@/components/ui/mobile-layout';
+import { DashboardLayout } from '@/components/ui/dashboard-layout';
 import type { Folder, Prompt } from '@shared/schema';
 
 interface FolderCardProps {
@@ -448,76 +447,13 @@ export default function FoldersPage() {
 
   return (
     <RequireAuth>
-      <div className="min-h-screen bg-background">
-        {/* Navigation Header - EXACT SAME as Dashboard */}
-        <header className="bg-card border-b border-border shadow-sm sticky top-0 z-40">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center space-x-4">
-              <Button
-                data-testid="button-sidebar-toggle"
-                variant="ghost"
-                size="sm"
-                className="lg:hidden p-2"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-              >
-                <Menu className="w-5 h-5" />
-              </Button>
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-primary-foreground" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2L3.09 8.26L12 14L20.91 8.26L12 2Z"/>
-                    <path d="M3.09 15.74L12 22L20.91 15.74L12 9.48L3.09 15.74Z"/>
-                  </svg>
-                </div>
-                <h1 className="text-xl font-bold text-foreground">PromptLockr</h1>
-              </div>
-            </div>
-
-            {/* Header Actions - Search Bar and User Menu - EXACT SAME as Dashboard */}
-            <div className="flex items-center space-x-4">
-              {/* Search Bar - Now on right side - EXACT SAME as Dashboard */}
-              <div className="relative w-80">
-                <SearchBar
-                  onSearch={setSearchQuery}
-                  placeholder="Search folders or prompts..."
-                  className="w-full"
-                />
-              </div>
-              
-              {/* User Menu - EXACT SAME as Dashboard */}
-              <Link to="/settings" className="cursor-pointer">
-                <div 
-                  data-testid="link-profile-settings"
-                  className="w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:opacity-90 transition-opacity"
-                >
-                  <span className="text-sm font-medium text-primary-foreground">U</span>
-                </div>
-              </Link>
-            </div>
-          </div>
-        </header>
-
-        <div className="flex">
-          {/* Sidebar - EXACT SAME as Dashboard */}
-          <Sidebar
-            onCreatePrompt={handleCreatePrompt}
-            onImport={handleImport}
-            className={cn(
-              "lg:translate-x-0 fixed lg:relative z-30",
-              sidebarOpen ? "translate-x-0" : "-translate-x-full"
-            )}
-          />
-
-          {/* Mobile Sidebar Overlay - EXACT SAME as Dashboard */}
-          {sidebarOpen && (
-            <div 
-              className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"
-              onClick={() => setSidebarOpen(false)}
-            />
-          )}
-
-          {/* Main Content - EXACT SAME as Dashboard */}
-          <main className="flex-1 p-6 lg:p-8">
+      <DashboardLayout
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search folders or prompts..."
+        onCreatePrompt={handleCreatePrompt}
+        onImport={handleImport}
+      >
 
             {/* Folders Content Header - EXACT SAME structure as Dashboard */}
             <div className="flex items-center justify-between mb-6">
@@ -701,9 +637,7 @@ export default function FoldersPage() {
               </div>
             )}
 
-          </main>
-        </div>
-      </div>
+      </DashboardLayout>
 
         {/* Create Folder Modal */}
         <CreateFolderModal

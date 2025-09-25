@@ -6,8 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PlusIcon, Grid3X3, List, Menu } from 'lucide-react';
 import { RequireAuth } from '@/components/auth/AuthProvider';
-import { Sidebar } from '@/components/dashboard/Sidebar';
-import { SearchBar } from '@/components/dashboard/SearchBar';
+import { DashboardLayout } from '@/components/ui/dashboard-layout';
 import { Link } from 'wouter';
 import { cn } from '@/lib/utils';
 
@@ -85,76 +84,13 @@ export default function TemplatesPage() {
 
   return (
     <RequireAuth>
-      <div className="min-h-screen bg-background">
-        {/* Navigation Header - EXACT SAME as Dashboard */}
-        <header className="bg-card border-b border-border shadow-sm sticky top-0 z-40">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center space-x-4">
-              <Button
-                data-testid="button-sidebar-toggle"
-                variant="ghost"
-                size="sm"
-                className="lg:hidden p-2"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-              >
-                <Menu className="w-5 h-5" />
-              </Button>
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-primary-foreground" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2L3.09 8.26L12 14L20.91 8.26L12 2Z"/>
-                    <path d="M3.09 15.74L12 22L20.91 15.74L12 9.48L3.09 15.74Z"/>
-                  </svg>
-                </div>
-                <h1 className="text-xl font-bold text-foreground">PromptLockr</h1>
-              </div>
-            </div>
-
-            {/* Header Actions - Search Bar and User Menu - EXACT SAME as Dashboard */}
-            <div className="flex items-center space-x-4">
-              {/* Search Bar - Now on right side - EXACT SAME as Dashboard */}
-              <div className="relative w-80">
-                <SearchBar
-                  onSearch={setSearchQuery}
-                  placeholder="Search templates, tags, or content..."
-                  className="w-full"
-                />
-              </div>
-              
-              {/* User Menu - EXACT SAME as Dashboard */}
-              <Link to="/settings" className="cursor-pointer">
-                <div 
-                  data-testid="link-profile-settings"
-                  className="w-8 h-8 bg-primary rounded-full flex items-center justify-center hover:opacity-90 transition-opacity"
-                >
-                  <span className="text-sm font-medium text-primary-foreground">U</span>
-                </div>
-              </Link>
-            </div>
-          </div>
-        </header>
-
-        <div className="flex">
-          {/* Sidebar - EXACT SAME as Dashboard */}
-          <Sidebar
-            onCreatePrompt={handleCreatePrompt}
-            onImport={handleImport}
-            className={cn(
-              "lg:translate-x-0 fixed lg:relative z-30",
-              sidebarOpen ? "translate-x-0" : "-translate-x-full"
-            )}
-          />
-
-          {/* Mobile Sidebar Overlay - EXACT SAME as Dashboard */}
-          {sidebarOpen && (
-            <div 
-              className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"
-              onClick={() => setSidebarOpen(false)}
-            />
-          )}
-
-          {/* Main Content - EXACT SAME as Dashboard */}
-          <main className="flex-1 p-6 lg:p-8">
+      <DashboardLayout
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search templates, tags, or content..."
+        onCreatePrompt={handleCreatePrompt}
+        onImport={handleImport}
+      >
               {/* Templates Header with Controls */}
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -333,8 +269,7 @@ export default function TemplatesPage() {
               )}
             </>
           )}
-          </main>
-        </div>
+      </DashboardLayout>
 
         {/* Modals */}
         <CreateTemplateModal
@@ -356,7 +291,6 @@ export default function TemplatesPage() {
           onInstantiate={handleTemplateInstantiate}
           folders={folders.map(f => ({ id: f.id, name: f.name }))}
         />
-      </div>
     </RequireAuth>
   );
 }
