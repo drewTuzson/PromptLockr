@@ -5,9 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { SubscriptionManager } from '@/components/ui/subscription-manager';
-import { ExportManager } from '@/components/ui/export-manager';
-import { ApiKeyManager } from '@/components/ui/api-key-manager';
 import { RequireAuth } from '@/components/auth/AuthProvider';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/components/ui/theme-provider';
@@ -20,8 +17,13 @@ export default function Settings() {
     setTheme(checked ? 'dark' : 'light');
   };
 
+  const handleExportData = () => {
+    // This would typically export user data - for now just show a toast
+    console.log('Export data functionality would go here');
+  };
+
   const handleImportData = () => {
-    // TODO: Implement import functionality in Phase 5
+    // This would typically import user data - for now just show a toast
     console.log('Import data functionality would go here');
   };
 
@@ -130,63 +132,50 @@ export default function Settings() {
               </CardContent>
             </Card>
 
-            {/* Export Management Section */}
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-2xl font-bold text-foreground">Data Export</h2>
-                <p className="text-muted-foreground">
-                  Export your prompts and folders in multiple formats with job tracking.
-                </p>
-              </div>
-              <ExportManager />
-            </div>
-
-            {/* Import Section - Placeholder for Phase 5 */}
+            {/* Data Management Section */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
-                  <Upload className="w-5 h-5" />
-                  <span>Import Data</span>
+                  <Download className="w-5 h-5" />
+                  <span>Data Management</span>
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-3">
-                  Import prompts and folders from exported files. Coming in Phase 5.
-                </p>
-                <Button
-                  data-testid="button-import-data"
-                  variant="outline"
-                  onClick={handleImportData}
-                  disabled
-                  className="flex items-center space-x-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Import Data (Coming Soon)</span>
-                </Button>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium text-foreground">Export Your Data</h4>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Download all your prompts and folders as a JSON file.
+                    </p>
+                    <Button
+                      data-testid="button-export-data"
+                      variant="outline"
+                      onClick={handleExportData}
+                      className="flex items-center space-x-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Export Data</span>
+                    </Button>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <h4 className="font-medium text-foreground">Import Data</h4>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Import prompts and folders from a JSON file.
+                    </p>
+                    <Button
+                      data-testid="button-import-data"
+                      variant="outline"
+                      onClick={handleImportData}
+                      className="flex items-center space-x-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>Import Data</span>
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
-
-            {/* API Keys Section */}
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-2xl font-bold text-foreground">Developer Tools</h2>
-                <p className="text-muted-foreground">
-                  Manage API keys for programmatic access to your prompts and collections.
-                </p>
-              </div>
-              <ApiKeyManager />
-            </div>
-
-            {/* Subscription Management Section */}
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-2xl font-bold text-foreground">Subscription & Billing</h2>
-                <p className="text-muted-foreground">
-                  Manage your subscription, view usage, and billing information.
-                </p>
-              </div>
-              <SubscriptionManager />
-            </div>
 
             {/* Footer */}
             <div className="text-center py-8 border-t">

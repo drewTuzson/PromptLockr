@@ -4,7 +4,6 @@ import { Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/dashboard/Sidebar';
 import { SearchBar } from '@/components/dashboard/SearchBar';
-import { NotificationCenter } from '@/components/ui/notification-center';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
@@ -84,9 +83,6 @@ export function DashboardLayout({
                 />
               </div>
             )}
-            
-            {/* Notifications */}
-            <NotificationCenter />
             
             {/* User Menu - EXACT same as Dashboard */}
             <Link to="/settings" className="cursor-pointer">

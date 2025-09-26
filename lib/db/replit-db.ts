@@ -108,54 +108,6 @@ export class ReplitDBAdapter {
     }
   }
 
-  async getAllUsers(): Promise<UserDB[]> {
-    try {
-      // Get all user keys (users are stored with 'user:' prefix)
-      const keysResponse = await db.list('user:');
-      const users: UserDB[] = [];
-
-      // Handle Replit Database wrapped response format for list
-      let keyArray: string[] = [];
-      if (typeof keysResponse === 'object' && 'ok' in keysResponse && keysResponse.ok === true && 'value' in keysResponse) {
-        keyArray = keysResponse.value as string[];
-      } else if (Array.isArray(keysResponse)) {
-        keyArray = keysResponse;
-      } else {
-        console.log('Unexpected keys response format:', keysResponse);
-        return [];
-      }
-
-      for (const key of keyArray) {
-        // Skip the user:id: reverse lookup keys
-        if (key.startsWith('user:id:')) continue;
-        
-        try {
-          const userData = await db.get(key);
-          if (userData && !(typeof userData === 'object' && 'ok' in userData && userData.ok === false)) {
-            // Handle Replit Database wrapped response format
-            let jsonString;
-            if (typeof userData === 'object' && 'ok' in userData && userData.ok === true && 'value' in userData) {
-              jsonString = userData.value as string;
-              users.push(JSON.parse(jsonString));
-            } else if (typeof userData === 'string') {
-              users.push(JSON.parse(userData));
-            } else {
-              // Direct object return (fallback)
-              users.push(userData as UserDB);
-            }
-          }
-        } catch (parseError) {
-          console.error(`Failed to parse user data for key ${key}:`, parseError);
-        }
-      }
-
-      return users;
-    } catch (error) {
-      console.error('Failed to get all users from Replit DB:', error);
-      return [];
-    }
-  }
-
   // Prompt operations with pagination support
   async createPrompt(promptData: Omit<PromptDB, 'id'>): Promise<PromptDB> {
     const id = crypto.randomUUID();
