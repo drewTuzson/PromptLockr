@@ -15,7 +15,7 @@ import { buildFilterConditions, buildOrderBy } from "./utils/filterQueryBuilder.
 import { sql, eq, and, or, desc, ilike, isNotNull, isNull, inArray } from "drizzle-orm";
 import { claudeService } from "./services/claudeService.js";
 import { templateEngine } from "./services/templateEngine.js";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 const replitDB = new ReplitDBAdapter();
 const healthDB = new Database();
@@ -3116,8 +3116,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { userId } = requireAuth(req);
         return `user:${userId}`;
       } catch {
-        // Use proper IP handling for IPv6 compatibility
-        return `ip:${req.ip}`;
+        // Use proper IPv6-compatible IP handling
+        return `ip:${ipKeyGenerator(req)}`;
       }
     },
     skip: (req) => {
@@ -3455,6 +3455,339 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Failed to fetch usage metrics' });
     }
   });
+
+  // === Phase 4: Export System API ===
+  
+  // POST /api/export - Create new export job
+  app.post("/api/export", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { exportType, format } = req.body;
+
+      // Validate request
+      const validExportTypes = ['full', 'prompts', 'collections'];
+      const validFormats = ['json', 'csv', 'markdown'];
+      
+      if (!validExportTypes.includes(exportType)) {
+        return res.status(400).json({ message: 'Invalid export type' });
+      }
+      
+      if (!validFormats.includes(format)) {
+        return res.status(400).json({ message: 'Invalid format' });
+      }
+
+      // Check for existing pending/processing jobs
+      const existingJob = await drizzleDB
+        .select()
+        .from(exportJobs)
+        .where(and(
+          eq(exportJobs.userId, userId),
+          inArray(exportJobs.status, ['pending', 'processing'])
+        ))
+        .limit(1);
+
+      if (existingJob.length > 0) {
+        return res.status(429).json({ 
+          message: 'Export job already in progress',
+          jobId: existingJob[0].id
+        });
+      }
+
+      // Record usage metric for exports (simple insert since no unique constraint exists)
+      await drizzleDB
+        .insert(usageMetrics)
+        .values({
+          userId,
+          metricType: 'exports',
+          value: 1,
+          periodStart: new Date(),
+          periodEnd: new Date()
+        });
+
+      // Create export job
+      const [job] = await drizzleDB
+        .insert(exportJobs)
+        .values({
+          userId,
+          exportType,
+          format,
+          status: 'pending',
+          startedAt: new Date(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+        })
+        .returning();
+
+      // Start async processing (in background)
+      processExportJob(job.id, userId, exportType, format).catch(error => {
+        console.error('Export job processing error:', error);
+        // Update job status to failed
+        drizzleDB
+          .update(exportJobs)
+          .set({ 
+            status: 'failed', 
+            errorMessage: error.message,
+            completedAt: new Date()
+          })
+          .where(eq(exportJobs.id, job.id))
+          .catch(updateError => console.error('Failed to update job status:', updateError));
+      });
+
+      res.status(201).json({
+        jobId: job.id,
+        status: 'pending',
+        exportType,
+        format,
+        estimatedTimeMinutes: getEstimatedTime(exportType)
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error creating export job:', error);
+      res.status(500).json({ message: 'Failed to create export job' });
+    }
+  });
+
+  // GET /api/export/:jobId/status - Check export job status
+  app.get("/api/export/:jobId/status", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { jobId } = req.params;
+
+      const [job] = await drizzleDB
+        .select()
+        .from(exportJobs)
+        .where(and(
+          eq(exportJobs.id, jobId),
+          eq(exportJobs.userId, userId)
+        ))
+        .limit(1);
+
+      if (!job) {
+        return res.status(404).json({ message: 'Export job not found' });
+      }
+
+      // Check if job has expired
+      if (job.expiresAt && new Date() > job.expiresAt) {
+        return res.status(410).json({ 
+          message: 'Export job has expired',
+          status: 'expired'
+        });
+      }
+
+      res.json({
+        jobId: job.id,
+        status: job.status,
+        exportType: job.exportType,
+        format: job.format,
+        fileSize: job.fileSize,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        expiresAt: job.expiresAt,
+        downloadUrl: job.status === 'completed' && job.fileUrl ? 
+          `/api/export/${job.id}/download` : null,
+        errorMessage: job.errorMessage
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching export job status:', error);
+      res.status(500).json({ message: 'Failed to fetch job status' });
+    }
+  });
+
+  // GET /api/export/:jobId/download - Download completed export file
+  app.get("/api/export/:jobId/download", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { jobId } = req.params;
+
+      const [job] = await drizzleDB
+        .select()
+        .from(exportJobs)
+        .where(and(
+          eq(exportJobs.id, jobId),
+          eq(exportJobs.userId, userId)
+        ))
+        .limit(1);
+
+      if (!job) {
+        return res.status(404).json({ message: 'Export job not found' });
+      }
+
+      if (job.status !== 'completed') {
+        return res.status(400).json({ 
+          message: 'Export job not completed',
+          status: job.status
+        });
+      }
+
+      // Check if job has expired
+      if (job.expiresAt && new Date() > job.expiresAt) {
+        return res.status(410).json({ 
+          message: 'Export job has expired',
+          status: 'expired'
+        });
+      }
+
+      if (!job.fileUrl) {
+        return res.status(404).json({ message: 'Export file not found' });
+      }
+
+      // For development, serve the file content directly
+      // In production, this would redirect to a signed S3 URL
+      const fileName = `promptlockr-export-${job.exportType}-${Date.now()}.${job.format}`;
+      const contentType = getContentType(job.format);
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      
+      if (job.fileSize) {
+        res.setHeader('Content-Length', job.fileSize.toString());
+      }
+
+      // Return the file content (stored in fileUrl as base64 or direct content for dev)
+      res.send(job.fileUrl);
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error downloading export file:', error);
+      res.status(500).json({ message: 'Failed to download file' });
+    }
+  });
+
+  // Helper function to process export jobs asynchronously
+  async function processExportJob(jobId: string, userId: string, exportType: string, format: string) {
+    try {
+      // Update status to processing
+      await drizzleDB
+        .update(exportJobs)
+        .set({ status: 'processing' })
+        .where(eq(exportJobs.id, jobId));
+
+      let data: any;
+      
+      // Fetch data based on export type
+      if (exportType === 'full') {
+        const prompts = await drizzleDB
+          .select()
+          .from(prompts)
+          .where(eq(prompts.userId, userId));
+          
+        const folders = await drizzleDB
+          .select()
+          .from(folders)
+          .where(eq(folders.userId, userId));
+          
+        data = { prompts, folders };
+      } else if (exportType === 'prompts') {
+        data = await drizzleDB
+          .select()
+          .from(prompts)
+          .where(eq(prompts.userId, userId));
+      } else if (exportType === 'collections') {
+        data = await drizzleDB
+          .select()
+          .from(folders)
+          .where(eq(folders.userId, userId));
+      }
+
+      // Format data based on requested format
+      let fileContent: string;
+      let fileSize: number;
+      
+      if (format === 'json') {
+        fileContent = JSON.stringify({
+          version: '1.0',
+          exportDate: new Date().toISOString(),
+          exportType,
+          data
+        }, null, 2);
+      } else if (format === 'csv') {
+        fileContent = formatAsCSV(data, exportType);
+      } else if (format === 'markdown') {
+        fileContent = formatAsMarkdown(data, exportType);
+      } else {
+        throw new Error('Unsupported format');
+      }
+
+      fileSize = Buffer.byteLength(fileContent, 'utf8');
+
+      // Store file content (in production, upload to S3 and store URL)
+      await drizzleDB
+        .update(exportJobs)
+        .set({
+          status: 'completed',
+          fileUrl: fileContent, // In dev, store content directly
+          fileSize,
+          completedAt: new Date()
+        })
+        .where(eq(exportJobs.id, jobId));
+
+    } catch (error) {
+      console.error('Export processing error:', error);
+      throw error;
+    }
+  }
+
+  // Helper functions
+  function getEstimatedTime(exportType: string): number {
+    const estimates = { full: 3, prompts: 1, collections: 1 };
+    return estimates[exportType as keyof typeof estimates] || 2;
+  }
+
+  function getContentType(format: string): string {
+    const types = {
+      json: 'application/json',
+      csv: 'text/csv',
+      markdown: 'text/markdown'
+    };
+    return types[format as keyof typeof types] || 'text/plain';
+  }
+
+  function formatAsCSV(data: any, exportType: string): string {
+    if (exportType === 'prompts' || (exportType === 'full' && data.prompts)) {
+      const items = exportType === 'full' ? data.prompts : data;
+      const headers = ['id', 'title', 'content', 'platform', 'tags', 'createdAt'];
+      const rows = items.map((item: any) => [
+        item.id,
+        `"${item.title?.replace(/"/g, '""') || ''}"`,
+        `"${item.content?.replace(/"/g, '""') || ''}"`,
+        item.platform || '',
+        `"${Array.isArray(item.tags) ? item.tags.join(', ') : ''}"`,
+        item.createdAt || ''
+      ]);
+      return [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+    }
+    return 'No data available';
+  }
+
+  function formatAsMarkdown(data: any, exportType: string): string {
+    let markdown = `# PromptLockr Export\n\n`;
+    markdown += `Export Date: ${new Date().toISOString()}\n`;
+    markdown += `Export Type: ${exportType}\n\n`;
+    
+    if (exportType === 'prompts' || (exportType === 'full' && data.prompts)) {
+      const items = exportType === 'full' ? data.prompts : data;
+      markdown += `## Prompts (${items.length})\n\n`;
+      items.forEach((item: any, index: number) => {
+        markdown += `### ${index + 1}. ${item.title || 'Untitled'}\n\n`;
+        markdown += `**Platform:** ${item.platform || 'Unknown'}\n\n`;
+        if (item.tags && item.tags.length > 0) {
+          markdown += `**Tags:** ${item.tags.join(', ')}\n\n`;
+        }
+        markdown += `**Content:**\n\n${item.content || ''}\n\n`;
+        markdown += `---\n\n`;
+      });
+    }
+    
+    return markdown;
+  }
 
   const httpServer = createServer(app);
   return httpServer;
