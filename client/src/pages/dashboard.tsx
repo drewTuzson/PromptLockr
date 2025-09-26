@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Menu, Download, RotateCcw, ArrowLeft, Trash2, Grid3X3, List, Edit, ChevronDown, ArrowUpAZ, ArrowDownAZ, Clock, Star } from 'lucide-react';
+import { ActivityFeed } from '@/components/ui/activity-feed';
 import { useRoute, Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Sidebar } from '@/components/dashboard/Sidebar';
@@ -795,6 +796,11 @@ export default function Dashboard() {
                 )}
               </>
             )}
+
+            {/* Activity Feed Widget */}
+            <div className="mt-8 lg:mt-0 lg:fixed lg:right-6 lg:top-24 lg:w-80 lg:max-h-[calc(100vh-120px)] z-30">
+              <ActivityFeed maxHeight="600px" />
+            </div>
           </main>
         </div>
       </div>
