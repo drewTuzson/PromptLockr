@@ -247,7 +247,7 @@ export function ActivityFeed({ className, maxHeight = "400px" }: ActivityFeedPro
                                 <span key={key} className="mr-3">
                                   {key}: {String(value)}
                                 </span>
-                              )) || null}
+                              ))}
                             </div>
                           )}
 
