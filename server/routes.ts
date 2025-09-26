@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema, subscriptionTiers, userSubscriptions, usageMetrics, insertUserSubscriptionSchema, insertUsageMetricSchema } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema, subscriptionTiers, userSubscriptions, usageMetrics, insertUserSubscriptionSchema, insertUsageMetricSchema, apiKeys, createApiKeySchema, exportJobs } from "@shared/schema";
 import { validateUsername, generateAvatar } from "@shared/avatarUtils";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -16,6 +16,8 @@ import { sql, eq, and, or, desc, ilike, isNotNull, isNull, inArray } from "drizz
 import { claudeService } from "./services/claudeService.js";
 import { templateEngine } from "./services/templateEngine.js";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
 
 const replitDB = new ReplitDBAdapter();
 const healthDB = new Database();
@@ -3788,6 +3790,278 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     return markdown;
   }
+
+  // === Phase 4: API Key Management System ===
+  
+  // POST /api/developer/keys - Create new API key
+  app.post("/api/developer/keys", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const validatedData = createApiKeySchema.parse(req.body);
+
+      // Check user's current API key count (rate limiting)
+      const existingKeys = await drizzleDB
+        .select({ count: sql`count(*)` })
+        .from(apiKeys)
+        .where(and(
+          eq(apiKeys.userId, userId),
+          isNull(apiKeys.revokedAt)
+        ));
+
+      const keyCount = Number(existingKeys[0]?.count || 0);
+      if (keyCount >= 10) { // Limit to 10 active API keys per user
+        return res.status(429).json({ 
+          message: 'Maximum API key limit reached (10 keys)',
+          currentCount: keyCount,
+          maxKeys: 10
+        });
+      }
+
+      // Generate cryptographically secure API key (32 random bytes = 64 hex chars)
+      const rawKey = randomBytes(32).toString('hex');
+      
+      // Create the full API key with prefix
+      const fullApiKey = `plr_${rawKey}`;
+      
+      // Hash the key for secure storage
+      const keyHash = await bcrypt.hash(fullApiKey, 12);
+      
+      // Store last 4 characters for identification
+      const lastFour = fullApiKey.slice(-4);
+
+      // Set expiration (default 1 year, or custom)
+      const expiresAt = validatedData.expiresAt || 
+        new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
+      // Create API key record
+      const [newKey] = await drizzleDB
+        .insert(apiKeys)
+        .values({
+          userId,
+          name: validatedData.name,
+          keyHash,
+          lastFour,
+          permissions: validatedData.permissions || ['read'],
+          rateLimit: validatedData.rateLimit || 1000,
+          expiresAt
+        })
+        .returning({
+          id: apiKeys.id,
+          name: apiKeys.name,
+          lastFour: apiKeys.lastFour,
+          permissions: apiKeys.permissions,
+          rateLimit: apiKeys.rateLimit,
+          expiresAt: apiKeys.expiresAt,
+          createdAt: apiKeys.createdAt
+        });
+
+      // Record usage metric for API key creation
+      await drizzleDB
+        .insert(usageMetrics)
+        .values({
+          userId,
+          metricType: 'api_keys_created',
+          value: 1,
+          periodStart: new Date(),
+          periodEnd: new Date()
+        });
+
+      res.status(201).json({
+        message: 'API key created successfully',
+        key: newKey,
+        // WARNING: This is the only time the full key is shown
+        apiKey: fullApiKey,
+        warning: 'Store this API key securely. It will not be shown again.'
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: 'Invalid request data',
+          errors: error.errors 
+        });
+      }
+      console.error('Error creating API key:', error);
+      res.status(500).json({ message: 'Failed to create API key' });
+    }
+  });
+
+  // GET /api/developer/keys - List user's API keys
+  app.get("/api/developer/keys", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+
+      const userKeys = await drizzleDB
+        .select({
+          id: apiKeys.id,
+          name: apiKeys.name,
+          lastFour: apiKeys.lastFour,
+          permissions: apiKeys.permissions,
+          rateLimit: apiKeys.rateLimit,
+          lastUsedAt: apiKeys.lastUsedAt,
+          expiresAt: apiKeys.expiresAt,
+          createdAt: apiKeys.createdAt,
+          revokedAt: apiKeys.revokedAt
+        })
+        .from(apiKeys)
+        .where(eq(apiKeys.userId, userId))
+        .orderBy(desc(apiKeys.createdAt));
+
+      // Categorize keys by status
+      const activeKeys = userKeys.filter(key => !key.revokedAt && (!key.expiresAt || key.expiresAt > new Date()));
+      const expiredKeys = userKeys.filter(key => !key.revokedAt && key.expiresAt && key.expiresAt <= new Date());
+      const revokedKeys = userKeys.filter(key => key.revokedAt);
+
+      res.json({
+        keys: userKeys,
+        summary: {
+          total: userKeys.length,
+          active: activeKeys.length,
+          expired: expiredKeys.length,
+          revoked: revokedKeys.length,
+          maxKeys: 10
+        }
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching API keys:', error);
+      res.status(500).json({ message: 'Failed to fetch API keys' });
+    }
+  });
+
+  // DELETE /api/developer/keys/:keyId - Revoke API key
+  app.delete("/api/developer/keys/:keyId", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { keyId } = req.params;
+
+      if (!keyId) {
+        return res.status(400).json({ message: 'API key ID required' });
+      }
+
+      // Verify ownership and existence
+      const [existingKey] = await drizzleDB
+        .select()
+        .from(apiKeys)
+        .where(and(
+          eq(apiKeys.id, keyId),
+          eq(apiKeys.userId, userId)
+        ))
+        .limit(1);
+
+      if (!existingKey) {
+        return res.status(404).json({ message: 'API key not found' });
+      }
+
+      if (existingKey.revokedAt) {
+        return res.status(400).json({ 
+          message: 'API key already revoked',
+          revokedAt: existingKey.revokedAt
+        });
+      }
+
+      // Revoke the key (soft delete)
+      const [revokedKey] = await drizzleDB
+        .update(apiKeys)
+        .set({ revokedAt: new Date() })
+        .where(and(
+          eq(apiKeys.id, keyId),
+          eq(apiKeys.userId, userId)
+        ))
+        .returning({
+          id: apiKeys.id,
+          name: apiKeys.name,
+          lastFour: apiKeys.lastFour,
+          revokedAt: apiKeys.revokedAt
+        });
+
+      res.json({
+        message: 'API key revoked successfully',
+        key: revokedKey
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error revoking API key:', error);
+      res.status(500).json({ message: 'Failed to revoke API key' });
+    }
+  });
+
+  // PATCH /api/developer/keys/:keyId - Update API key (name, permissions, rate limit)
+  app.patch("/api/developer/keys/:keyId", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { keyId } = req.params;
+      const { name, permissions, rateLimit } = req.body;
+
+      if (!keyId) {
+        return res.status(400).json({ message: 'API key ID required' });
+      }
+
+      // Verify ownership and existence
+      const [existingKey] = await drizzleDB
+        .select()
+        .from(apiKeys)
+        .where(and(
+          eq(apiKeys.id, keyId),
+          eq(apiKeys.userId, userId),
+          isNull(apiKeys.revokedAt)
+        ))
+        .limit(1);
+
+      if (!existingKey) {
+        return res.status(404).json({ message: 'API key not found or revoked' });
+      }
+
+      // Build update object
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (permissions !== undefined) updateData.permissions = permissions;
+      if (rateLimit !== undefined) updateData.rateLimit = rateLimit;
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ message: 'No valid fields to update' });
+      }
+
+      // Update the key
+      const [updatedKey] = await drizzleDB
+        .update(apiKeys)
+        .set(updateData)
+        .where(and(
+          eq(apiKeys.id, keyId),
+          eq(apiKeys.userId, userId)
+        ))
+        .returning({
+          id: apiKeys.id,
+          name: apiKeys.name,
+          lastFour: apiKeys.lastFour,
+          permissions: apiKeys.permissions,
+          rateLimit: apiKeys.rateLimit,
+          expiresAt: apiKeys.expiresAt,
+          createdAt: apiKeys.createdAt
+        });
+
+      res.json({
+        message: 'API key updated successfully',
+        key: updatedKey
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error updating API key:', error);
+      res.status(500).json({ message: 'Failed to update API key' });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
