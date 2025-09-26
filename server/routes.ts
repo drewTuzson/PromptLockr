@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema, subscriptionTiers, userSubscriptions, usageMetrics, insertUserSubscriptionSchema, insertUsageMetricSchema, apiKeys, createApiKeySchema, exportJobs, contentReports, insertContentReportSchema, activityFeed, insertActivityFeedSchema, userFollows, insertUserFollowSchema } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema, subscriptionTiers, userSubscriptions, usageMetrics, insertUserSubscriptionSchema, insertUsageMetricSchema, apiKeys, createApiKeySchema, exportJobs, contentReports, insertContentReportSchema, activityFeed, insertActivityFeedSchema, userFollows, insertUserFollowSchema, searchHistory, insertSearchHistorySchema } from "@shared/schema";
 import { validateUsername, generateAvatar } from "@shared/avatarUtils";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -4636,6 +4636,313 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error('Error fetching followers list:', error);
       res.status(500).json({ message: 'Failed to fetch followers list' });
+    }
+  });
+
+  // === Phase 4: Search Enhancements & History ===
+  
+  // GET /api/search/enhanced - Enhanced search with history tracking
+  app.get("/api/search/enhanced", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { q: query, type = 'all', limit = 20, page = 1 } = req.query;
+      
+      if (!query || typeof query !== 'string') {
+        return res.status(400).json({ message: 'Search query is required' });
+      }
+
+      const searchTerm = `%${query}%`;
+      const offset = (Number(page) - 1) * Number(limit);
+      let results = [];
+      let totalCount = 0;
+
+      // Search prompts
+      if (type === 'all' || type === 'prompts') {
+        const promptResults = await drizzleDB
+          .select({
+            id: prompts.id,
+            title: prompts.title,
+            content: prompts.content,
+            tags: prompts.tags,
+            platform: prompts.platform,
+            createdAt: prompts.createdAt,
+            type: sql`'prompt'`.as('type')
+          })
+          .from(prompts)
+          .where(and(
+            eq(prompts.userId, userId),
+            isNull(prompts.deletedAt),
+            or(
+              ilike(prompts.title, searchTerm),
+              ilike(prompts.content, searchTerm),
+              sql`exists (select 1 from unnest(${prompts.tags}) t where t ilike ${searchTerm})`
+            )
+          ))
+          .orderBy(desc(prompts.createdAt))
+          .limit(Number(limit))
+          .offset(offset);
+
+        results = [...results, ...promptResults];
+      }
+
+      // Search collections
+      if (type === 'all' || type === 'collections') {
+        const collectionResults = await drizzleDB
+          .select({
+            id: promptCollections.id,
+            title: promptCollections.name,
+            content: promptCollections.description,
+            tags: sql`ARRAY[]::text[]`.as('tags'),
+            platform: sql`NULL`.as('platform'),
+            createdAt: promptCollections.createdAt,
+            type: sql`'collection'`.as('type')
+          })
+          .from(promptCollections)
+          .where(and(
+            eq(promptCollections.userId, userId),
+            or(
+              ilike(promptCollections.name, searchTerm),
+              ilike(promptCollections.description, searchTerm)
+            )
+          ))
+          .orderBy(desc(promptCollections.createdAt))
+          .limit(Number(limit))
+          .offset(offset);
+
+        results = [...results, ...collectionResults];
+      }
+
+      // Sort all results by creation date
+      results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      // Apply final limit if searching across multiple types
+      if (type === 'all') {
+        results = results.slice(0, Number(limit));
+      }
+
+      totalCount = results.length;
+
+      // Record search history
+      await drizzleDB
+        .insert(searchHistory)
+        .values({
+          userId,
+          query: query.toString(),
+          resultsCount: totalCount
+        });
+
+      // Record usage metric for search
+      await drizzleDB
+        .insert(usageMetrics)
+        .values({
+          userId,
+          metricType: 'searches_performed',
+          value: 1,
+          periodStart: new Date(),
+          periodEnd: new Date()
+        });
+
+      res.json({
+        results,
+        query: query.toString(),
+        type,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: totalCount,
+          totalPages: Math.ceil(totalCount / Number(limit))
+        }
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error performing enhanced search:', error);
+      res.status(500).json({ message: 'Failed to perform search' });
+    }
+  });
+
+  // GET /api/search/suggestions - Get search suggestions based on history
+  app.get("/api/search/suggestions", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { q: query, limit = 10 } = req.query;
+
+      let conditions = [eq(searchHistory.userId, userId)];
+      
+      // If partial query provided, find similar searches
+      if (query && typeof query === 'string') {
+        const searchTerm = `%${query}%`;
+        conditions.push(ilike(searchHistory.query, searchTerm));
+      }
+
+      // Get popular search terms for this user
+      const suggestions = await drizzleDB
+        .select({
+          query: searchHistory.query,
+          frequency: sql`count(*)`.as('frequency'),
+          lastSearched: sql`max(${searchHistory.createdAt})`.as('lastSearched'),
+          avgResults: sql`avg(${searchHistory.resultsCount})`.as('avgResults')
+        })
+        .from(searchHistory)
+        .where(and(...conditions))
+        .groupBy(searchHistory.query)
+        .orderBy(desc(sql`count(*)`), desc(sql`max(${searchHistory.createdAt})`))
+        .limit(Number(limit));
+
+      res.json({
+        suggestions,
+        query: query?.toString() || null
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching search suggestions:', error);
+      res.status(500).json({ message: 'Failed to fetch search suggestions' });
+    }
+  });
+
+  // GET /api/search/history - Get user's search history
+  app.get("/api/search/history", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { page = 1, limit = 50, days = 30 } = req.query;
+      const offset = (Number(page) - 1) * Number(limit);
+
+      // Filter to searches within the specified number of days
+      const dateThreshold = new Date();
+      dateThreshold.setDate(dateThreshold.getDate() - Number(days));
+
+      const searchHistoryItems = await drizzleDB
+        .select({
+          id: searchHistory.id,
+          query: searchHistory.query,
+          resultsCount: searchHistory.resultsCount,
+          clickedResultId: searchHistory.clickedResultId,
+          clickedResultType: searchHistory.clickedResultType,
+          createdAt: searchHistory.createdAt
+        })
+        .from(searchHistory)
+        .where(and(
+          eq(searchHistory.userId, userId),
+          gte(searchHistory.createdAt, dateThreshold)
+        ))
+        .orderBy(desc(searchHistory.createdAt))
+        .limit(Number(limit))
+        .offset(offset);
+
+      // Get total count for pagination
+      const [totalCount] = await drizzleDB
+        .select({ count: sql`count(*)` })
+        .from(searchHistory)
+        .where(and(
+          eq(searchHistory.userId, userId),
+          gte(searchHistory.createdAt, dateThreshold)
+        ));
+
+      // Get search analytics for the period
+      const [analytics] = await drizzleDB
+        .select({
+          totalSearches: sql`count(*)`,
+          uniqueQueries: sql`count(distinct ${searchHistory.query})`,
+          avgResultsPerSearch: sql`avg(${searchHistory.resultsCount})`,
+          mostSearchedQuery: sql`mode() within group (order by ${searchHistory.query})`
+        })
+        .from(searchHistory)
+        .where(and(
+          eq(searchHistory.userId, userId),
+          gte(searchHistory.createdAt, dateThreshold)
+        ));
+
+      res.json({
+        history: searchHistoryItems,
+        analytics: analytics || {
+          totalSearches: 0,
+          uniqueQueries: 0,
+          avgResultsPerSearch: 0,
+          mostSearchedQuery: null
+        },
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: Number(totalCount.count),
+          totalPages: Math.ceil(Number(totalCount.count) / Number(limit))
+        },
+        period: `${days} days`
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching search history:', error);
+      res.status(500).json({ message: 'Failed to fetch search history' });
+    }
+  });
+
+  // POST /api/search/click - Track clicked search results
+  app.post("/api/search/click", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { searchId, resultId, resultType } = req.body;
+
+      if (!searchId || !resultId || !resultType) {
+        return res.status(400).json({ message: 'Search ID, result ID, and result type are required' });
+      }
+
+      // Validate result type
+      const validTypes = ['prompt', 'user', 'collection'];
+      if (!validTypes.includes(resultType)) {
+        return res.status(400).json({ message: 'Invalid result type' });
+      }
+
+      // Update the search history entry with click information
+      const [updatedSearch] = await drizzleDB
+        .update(searchHistory)
+        .set({
+          clickedResultId: resultId,
+          clickedResultType: resultType
+        })
+        .where(and(
+          eq(searchHistory.id, searchId),
+          eq(searchHistory.userId, userId)
+        ))
+        .returning({
+          id: searchHistory.id,
+          query: searchHistory.query,
+          clickedResultId: searchHistory.clickedResultId,
+          clickedResultType: searchHistory.clickedResultType
+        });
+
+      if (!updatedSearch) {
+        return res.status(404).json({ message: 'Search history entry not found' });
+      }
+
+      // Record usage metric for click-through
+      await drizzleDB
+        .insert(usageMetrics)
+        .values({
+          userId,
+          metricType: 'search_clicks',
+          value: 1,
+          periodStart: new Date(),
+          periodEnd: new Date()
+        });
+
+      res.json({
+        message: 'Click tracked successfully',
+        search: updatedSearch
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error tracking search click:', error);
+      res.status(500).json({ message: 'Failed to track click' });
     }
   });
 
