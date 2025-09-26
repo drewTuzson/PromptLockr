@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema, subscriptionTiers, userSubscriptions, usageMetrics, insertUserSubscriptionSchema, insertUsageMetricSchema } from "@shared/schema";
 import { validateUsername, generateAvatar } from "@shared/avatarUtils";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -21,6 +21,10 @@ const replitDB = new ReplitDBAdapter();
 const healthDB = new Database();
 
 // Per-user SSE connection management for O(k) performance
+declare global {
+  var notificationConnections: Map<string, Set<{ id: string; res: any }>> | undefined;
+}
+
 global.notificationConnections = global.notificationConnections || new Map<string, Set<{ id: string; res: any }>>();
 
 // Helper function to broadcast notifications to connected SSE clients
@@ -3095,6 +3099,360 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error('Error setting up SSE connection:', error);
       res.status(500).json({ message: 'Failed to establish SSE connection' });
+    }
+  });
+
+  // === Phase 4: Subscription Management API ===
+  
+  // Rate limiting for subscription endpoints (user-based after auth)
+  const subscriptionRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 50, // Limit each user to 50 subscription requests per windowMs
+    message: { message: 'Too many subscription requests, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      try {
+        const { userId } = requireAuth(req);
+        return `user:${userId}`;
+      } catch {
+        // Use proper IP handling for IPv6 compatibility
+        return `ip:${req.ip}`;
+      }
+    },
+    skip: (req) => {
+      // Apply rate limiting only to subscription endpoints
+      return !req.path.startsWith('/api/subscription');
+    }
+  });
+
+  // GET /api/subscription/current - Get user's current subscription details
+  app.get("/api/subscription/current", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      // Get user's current active subscription with tier details (ordered by most recent)
+      const subscription = await drizzleDB
+        .select({
+          subscription: userSubscriptions,
+          tier: subscriptionTiers
+        })
+        .from(userSubscriptions)
+        .leftJoin(subscriptionTiers, eq(userSubscriptions.tierId, subscriptionTiers.id))
+        .where(and(
+          eq(userSubscriptions.userId, userId),
+          eq(userSubscriptions.status, 'active')
+        ))
+        .orderBy(desc(userSubscriptions.currentPeriodEnd))
+        .limit(1);
+      
+      // If no subscription found, return default free tier
+      if (subscription.length === 0) {
+        const [freeTier] = await drizzleDB
+          .select()
+          .from(subscriptionTiers)
+          .where(eq(subscriptionTiers.slug, 'free'))
+          .limit(1);
+        
+        // Compute billing period for free tier (monthly cycle)
+        const now = new Date();
+        const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        
+        // Get usage for free tier current period
+        const usage = await drizzleDB
+          .select()
+          .from(usageMetrics)
+          .where(and(
+            eq(usageMetrics.userId, userId),
+            sql`${usageMetrics.periodStart} >= ${periodStart}`,
+            sql`${usageMetrics.periodEnd} <= ${periodEnd}`
+          ));
+        
+        const usageData = usage.reduce((acc, metric) => {
+          acc[metric.metricType] = (acc[metric.metricType] || 0) + metric.value;
+          return acc;
+        }, {} as Record<string, number>);
+        
+        return res.json({
+          subscription: null,
+          tier: freeTier || null,
+          usage: usageData,
+          billingPeriod: { start: periodStart, end: periodEnd },
+          isDefault: true
+        });
+      }
+      
+      // Get current usage metrics for this billing period
+      const currentPeriodStart = subscription[0].subscription?.currentPeriodStart;
+      const currentPeriodEnd = subscription[0].subscription?.currentPeriodEnd;
+      
+      let usageData = {};
+      if (currentPeriodStart && currentPeriodEnd) {
+        const usage = await drizzleDB
+          .select()
+          .from(usageMetrics)
+          .where(and(
+            eq(usageMetrics.userId, userId),
+            sql`${usageMetrics.periodStart} >= ${currentPeriodStart}`,
+            sql`${usageMetrics.periodEnd} <= ${currentPeriodEnd}`
+          ));
+        
+        // Aggregate usage by metric type
+        usageData = usage.reduce((acc, metric) => {
+          acc[metric.metricType] = (acc[metric.metricType] || 0) + metric.value;
+          return acc;
+        }, {} as Record<string, number>);
+      }
+      
+      res.json({
+        subscription: subscription[0].subscription,
+        tier: subscription[0].tier,
+        usage: usageData,
+        isDefault: false
+      });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching current subscription:', error);
+      res.status(500).json({ message: 'Failed to fetch subscription details' });
+    }
+  });
+
+  // GET /api/subscription/tiers - Get all available subscription tiers
+  app.get("/api/subscription/tiers", async (req, res) => {
+    try {
+      const tiers = await drizzleDB
+        .select()
+        .from(subscriptionTiers)
+        .orderBy(subscriptionTiers.priceMonthly);
+      
+      res.json({ tiers });
+    } catch (error: any) {
+      console.error('Error fetching subscription tiers:', error);
+      res.status(500).json({ message: 'Failed to fetch subscription tiers' });
+    }
+  });
+
+  // POST /api/subscription/usage - Track usage metrics
+  app.post("/api/subscription/usage", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      const usageSchema = z.object({
+        metricType: z.enum(['prompts_created', 'ai_enhancements', 'collections_created', 'collaborations', 'exports']),
+        value: z.number().min(1).max(1000),
+        periodStart: z.string().datetime().optional(),
+        periodEnd: z.string().datetime().optional()
+      });
+      
+      const validation = usageSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          message: 'Invalid input',
+          errors: validation.error.errors
+        });
+      }
+      
+      const { metricType, value, periodStart, periodEnd } = validation.data;
+      
+      // Get user's current subscription and tier for limit enforcement
+      const subscription = await drizzleDB
+        .select({
+          subscription: userSubscriptions,
+          tier: subscriptionTiers
+        })
+        .from(userSubscriptions)
+        .leftJoin(subscriptionTiers, eq(userSubscriptions.tierId, subscriptionTiers.id))
+        .where(and(
+          eq(userSubscriptions.userId, userId),
+          eq(userSubscriptions.status, 'active')
+        ))
+        .orderBy(desc(userSubscriptions.currentPeriodEnd))
+        .limit(1);
+      
+      // Use free tier if no active subscription
+      let currentTier = subscription[0]?.tier;
+      if (!currentTier) {
+        const [freeTier] = await drizzleDB
+          .select()
+          .from(subscriptionTiers)
+          .where(eq(subscriptionTiers.slug, 'free'))
+          .limit(1);
+        currentTier = freeTier;
+      }
+      
+      // Fallback to hardcoded free tier if database tier is missing
+      if (!currentTier) {
+        currentTier = {
+          id: 'free-default',
+          name: 'Free',
+          slug: 'free',
+          priceMonthly: 0,
+          priceYearly: 0,
+          features: { ads: true, watermark: true },
+          maxPrompts: 100,
+          maxCollections: 5,
+          maxCollaborators: 3,
+          aiEnhancementsMonthly: 10,
+          prioritySupport: false,
+          customBranding: false,
+          analyticsRetentionDays: 7,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+      }
+      
+      // Type assertion to ensure currentTier is not null after fallback
+      const tier = currentTier!;
+      
+      // Use current month as default period if not provided
+      const now = new Date();
+      const defaultPeriodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const defaultPeriodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      
+      // Check current usage against tier limits BEFORE recording
+      const currentUsage = await drizzleDB
+        .select({ totalValue: sql`COALESCE(SUM(${usageMetrics.value}), 0)` })
+        .from(usageMetrics)
+        .where(and(
+          eq(usageMetrics.userId, userId),
+          eq(usageMetrics.metricType, metricType),
+          sql`${usageMetrics.periodStart} >= ${new Date(periodStart || defaultPeriodStart)}`
+        ));
+      
+      const currentTotal = Number(currentUsage[0]?.totalValue || 0);
+      const newTotal = currentTotal + value;
+      
+      // Enforce tier limits using the safe tier reference
+      const tierLimits: Record<string, number> = {
+        prompts_created: tier.maxPrompts || Infinity,
+        collections_created: tier.maxCollections || Infinity,
+        ai_enhancements: tier.aiEnhancementsMonthly || Infinity,
+        collaborations: tier.maxCollaborators || Infinity,
+        exports: 50 // Default export limit
+      };
+      
+      const limit = tierLimits[metricType];
+      if (limit !== null && newTotal > limit) {
+        return res.status(429).json({
+          message: `Usage limit exceeded for ${metricType}`,
+          limit,
+          current: currentTotal,
+          attempted: newTotal,
+          tier: tier.name
+        });
+      }
+      
+      // Check if usage record already exists for this period
+      const existingUsage = await drizzleDB
+        .select()
+        .from(usageMetrics)
+        .where(and(
+          eq(usageMetrics.userId, userId),
+          eq(usageMetrics.metricType, metricType),
+          eq(usageMetrics.periodStart, new Date(periodStart || defaultPeriodStart))
+        ))
+        .limit(1);
+      
+      if (existingUsage.length > 0) {
+        // Update existing usage
+        await drizzleDB
+          .update(usageMetrics)
+          .set({ 
+            value: sql`${usageMetrics.value} + ${value}`
+          })
+          .where(eq(usageMetrics.id, existingUsage[0].id));
+        
+        res.json({ 
+          message: 'Usage updated successfully',
+          newValue: existingUsage[0].value + value
+        });
+      } else {
+        // Create new usage record
+        const [newUsage] = await drizzleDB
+          .insert(usageMetrics)
+          .values({
+            userId,
+            metricType,
+            value,
+            periodStart: new Date(periodStart || defaultPeriodStart),
+            periodEnd: new Date(periodEnd || defaultPeriodEnd)
+          })
+          .returning();
+        
+        res.status(201).json({ 
+          message: 'Usage tracked successfully',
+          usage: newUsage
+        });
+      }
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error tracking usage:', error);
+      res.status(500).json({ message: 'Failed to track usage' });
+    }
+  });
+
+  // GET /api/subscription/usage - Get usage metrics for current period
+  app.get("/api/subscription/usage", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      const querySchema = z.object({
+        period: z.enum(['current', 'all']).default('current'),
+        metricType: z.enum(['prompts_created', 'ai_enhancements', 'collections_created', 'collaborations', 'exports']).optional()
+      });
+      
+      const validation = querySchema.safeParse(req.query);
+      if (!validation.success) {
+        return res.status(400).json({
+          message: 'Invalid query parameters',
+          errors: validation.error.errors
+        });
+      }
+      
+      const { period, metricType } = validation.data;
+      
+      let conditions = [eq(usageMetrics.userId, userId)];
+      
+      if (metricType) {
+        conditions.push(eq(usageMetrics.metricType, metricType));
+      }
+      
+      if (period === 'current') {
+        const now = new Date();
+        const currentPeriodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        conditions.push(sql`${usageMetrics.periodStart} >= ${currentPeriodStart}`);
+      }
+      
+      const usage = await drizzleDB
+        .select()
+        .from(usageMetrics)
+        .where(and(...conditions))
+        .orderBy(desc(usageMetrics.periodStart));
+      
+      // Aggregate by metric type for current period
+      const aggregated = usage.reduce((acc, metric) => {
+        if (!acc[metric.metricType]) {
+          acc[metric.metricType] = 0;
+        }
+        acc[metric.metricType] += metric.value;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      res.json({
+        usage: usage,
+        aggregated: aggregated
+      });
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching usage metrics:', error);
+      res.status(500).json({ message: 'Failed to fetch usage metrics' });
     }
   });
 
