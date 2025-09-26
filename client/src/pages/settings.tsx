@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { SubscriptionManager } from '@/components/ui/subscription-manager';
 import { RequireAuth } from '@/components/auth/AuthProvider';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/components/ui/theme-provider';
@@ -176,6 +177,17 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Subscription Management Section */}
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-2xl font-bold text-foreground">Subscription & Billing</h2>
+                <p className="text-muted-foreground">
+                  Manage your subscription, view usage, and billing information.
+                </p>
+              </div>
+              <SubscriptionManager />
+            </div>
 
             {/* Footer */}
             <div className="text-center py-8 border-t">
