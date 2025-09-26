@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema, subscriptionTiers, userSubscriptions, usageMetrics, insertUserSubscriptionSchema, insertUsageMetricSchema, apiKeys, createApiKeySchema, exportJobs } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema, subscriptionTiers, userSubscriptions, usageMetrics, insertUserSubscriptionSchema, insertUsageMetricSchema, apiKeys, createApiKeySchema, exportJobs, contentReports, insertContentReportSchema } from "@shared/schema";
 import { validateUsername, generateAvatar } from "@shared/avatarUtils";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -4060,6 +4060,292 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error('Error updating API key:', error);
       res.status(500).json({ message: 'Failed to update API key' });
+    }
+  });
+
+  // === Phase 4: Content Moderation System ===
+  
+  // POST /api/report - Submit content report
+  app.post("/api/report", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { contentType, contentId, reason, description } = req.body;
+
+      // Validate input
+      const validContentTypes = ['prompt', 'user', 'collection', 'comment'];
+      const validReasons = ['spam', 'inappropriate', 'copyright', 'other'];
+      
+      if (!validContentTypes.includes(contentType)) {
+        return res.status(400).json({ message: 'Invalid content type' });
+      }
+      
+      if (!validReasons.includes(reason)) {
+        return res.status(400).json({ message: 'Invalid report reason' });
+      }
+
+      if (!contentId) {
+        return res.status(400).json({ message: 'Content ID is required' });
+      }
+
+      // Check for duplicate reports (same user, content, reason within 24 hours)
+      const existingReport = await drizzleDB
+        .select()
+        .from(contentReports)
+        .where(and(
+          eq(contentReports.reporterUserId, userId),
+          eq(contentReports.contentId, contentId),
+          eq(contentReports.reason, reason),
+          sql`${contentReports.createdAt} > NOW() - INTERVAL '24 hours'`
+        ))
+        .limit(1);
+
+      if (existingReport.length > 0) {
+        return res.status(429).json({ 
+          message: 'Duplicate report. You have already reported this content in the last 24 hours.',
+          existingReportId: existingReport[0].id
+        });
+      }
+
+      // Verify content exists based on content type
+      let contentExists = false;
+      if (contentType === 'prompt') {
+        const [prompt] = await drizzleDB
+          .select({ id: prompts.id })
+          .from(prompts)
+          .where(eq(prompts.id, contentId))
+          .limit(1);
+        contentExists = !!prompt;
+      } else if (contentType === 'user') {
+        const [user] = await drizzleDB
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, contentId))
+          .limit(1);
+        contentExists = !!user;
+      } else if (contentType === 'collection') {
+        const [collection] = await drizzleDB
+          .select({ id: promptCollections.id })
+          .from(promptCollections)
+          .where(eq(promptCollections.id, contentId))
+          .limit(1);
+        contentExists = !!collection;
+      }
+
+      if (!contentExists) {
+        return res.status(404).json({ message: 'Content not found' });
+      }
+
+      // Create the report
+      const [newReport] = await drizzleDB
+        .insert(contentReports)
+        .values({
+          reporterUserId: userId,
+          contentType,
+          contentId,
+          reason,
+          description: description || null,
+          status: 'pending'
+        })
+        .returning({
+          id: contentReports.id,
+          contentType: contentReports.contentType,
+          contentId: contentReports.contentId,
+          reason: contentReports.reason,
+          status: contentReports.status,
+          createdAt: contentReports.createdAt
+        });
+
+      // Record usage metric for reports
+      await drizzleDB
+        .insert(usageMetrics)
+        .values({
+          userId,
+          metricType: 'reports_submitted',
+          value: 1,
+          periodStart: new Date(),
+          periodEnd: new Date()
+        });
+
+      res.status(201).json({
+        message: 'Report submitted successfully',
+        report: newReport
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error submitting report:', error);
+      res.status(500).json({ message: 'Failed to submit report' });
+    }
+  });
+
+  // GET /api/moderation/reports - List reports for moderators (admin only)
+  app.get("/api/moderation/reports", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      
+      // Check if user is admin/moderator
+      const [user] = await drizzleDB
+        .select({ role: users.role })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+      }
+
+      const { status, contentType, reason, page = 1, limit = 50 } = req.query;
+      const offset = (Number(page) - 1) * Number(limit);
+
+      // Build filter conditions
+      const conditions = [];
+      if (status && typeof status === 'string') {
+        conditions.push(eq(contentReports.status, status));
+      }
+      if (contentType && typeof contentType === 'string') {
+        conditions.push(eq(contentReports.contentType, contentType));
+      }
+      if (reason && typeof reason === 'string') {
+        conditions.push(eq(contentReports.reason, reason));
+      }
+
+      // Get reports with reporter and moderator info
+      const reports = await drizzleDB
+        .select({
+          id: contentReports.id,
+          reporterUserId: contentReports.reporterUserId,
+          contentType: contentReports.contentType,
+          contentId: contentReports.contentId,
+          reason: contentReports.reason,
+          description: contentReports.description,
+          status: contentReports.status,
+          moderatorId: contentReports.moderatorId,
+          moderatorNotes: contentReports.moderatorNotes,
+          actionTaken: contentReports.actionTaken,
+          createdAt: contentReports.createdAt,
+          resolvedAt: contentReports.resolvedAt,
+          reporterEmail: users.email,
+          moderatorEmail: sql`moderator_users.email`
+        })
+        .from(contentReports)
+        .leftJoin(users, eq(contentReports.reporterUserId, users.id))
+        .leftJoin(sql`users AS moderator_users`, sql`${contentReports.moderatorId} = moderator_users.id`)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(contentReports.createdAt))
+        .limit(Number(limit))
+        .offset(offset);
+
+      // Get total count for pagination
+      const [totalCount] = await drizzleDB
+        .select({ count: sql`count(*)` })
+        .from(contentReports)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        reports,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: Number(totalCount.count),
+          totalPages: Math.ceil(Number(totalCount.count) / Number(limit))
+        }
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching moderation reports:', error);
+      res.status(500).json({ message: 'Failed to fetch reports' });
+    }
+  });
+
+  // PATCH /api/moderation/reports/:reportId - Update report status (admin only)
+  app.patch("/api/moderation/reports/:reportId", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { reportId } = req.params;
+      const { status, moderatorNotes, actionTaken } = req.body;
+
+      // Check if user is admin/moderator
+      const [user] = await drizzleDB
+        .select({ role: users.role })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+      }
+
+      if (!reportId) {
+        return res.status(400).json({ message: 'Report ID required' });
+      }
+
+      // Validate status
+      const validStatuses = ['pending', 'reviewed', 'resolved', 'dismissed'];
+      if (status && !validStatuses.includes(status)) {
+        return res.status(400).json({ message: 'Invalid status' });
+      }
+
+      // Validate action taken
+      const validActions = ['removed', 'warned', 'banned', 'no_action'];
+      if (actionTaken && !validActions.includes(actionTaken)) {
+        return res.status(400).json({ message: 'Invalid action' });
+      }
+
+      // Check if report exists
+      const [existingReport] = await drizzleDB
+        .select()
+        .from(contentReports)
+        .where(eq(contentReports.id, reportId))
+        .limit(1);
+
+      if (!existingReport) {
+        return res.status(404).json({ message: 'Report not found' });
+      }
+
+      // Build update object
+      const updateData: any = {
+        moderatorId: userId
+      };
+      
+      if (status) updateData.status = status;
+      if (moderatorNotes !== undefined) updateData.moderatorNotes = moderatorNotes;
+      if (actionTaken) updateData.actionTaken = actionTaken;
+      
+      // Set resolved timestamp if status is resolved or dismissed
+      if (status === 'resolved' || status === 'dismissed') {
+        updateData.resolvedAt = new Date();
+      }
+
+      // Update the report
+      const [updatedReport] = await drizzleDB
+        .update(contentReports)
+        .set(updateData)
+        .where(eq(contentReports.id, reportId))
+        .returning({
+          id: contentReports.id,
+          status: contentReports.status,
+          moderatorId: contentReports.moderatorId,
+          moderatorNotes: contentReports.moderatorNotes,
+          actionTaken: contentReports.actionTaken,
+          resolvedAt: contentReports.resolvedAt
+        });
+
+      res.json({
+        message: 'Report updated successfully',
+        report: updatedReport
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error updating report:', error);
+      res.status(500).json({ message: 'Failed to update report' });
     }
   });
 
