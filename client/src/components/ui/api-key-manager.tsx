@@ -7,8 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Key, Plus, Copy, Trash2, Eye, EyeOff, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { Key, Plus, Copy, Trash2, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import type { ApiKey } from '@shared/schema';
@@ -91,7 +90,6 @@ export function ApiKeyManager({ className }: ApiKeyManagerProps) {
     permissions: ['read'],
     rateLimit: 1000,
   });
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
   const [createdKey, setCreatedKey] = useState<ApiKeyWithSecret | null>(null);
   const { toast } = useToast();
 
@@ -169,15 +167,6 @@ export function ApiKeyManager({ className }: ApiKeyManagerProps) {
     }
   };
 
-  const toggleKeyVisibility = (keyId: string) => {
-    const newVisible = new Set(visibleKeys);
-    if (newVisible.has(keyId)) {
-      newVisible.delete(keyId);
-    } else {
-      newVisible.add(keyId);
-    }
-    setVisibleKeys(newVisible);
-  };
 
   const handlePermissionChange = (permission: string, checked: boolean) => {
     const newPermissions = checked 
@@ -307,6 +296,7 @@ export function ApiKeyManager({ className }: ApiKeyManagerProps) {
               variant="ghost"
               onClick={() => setCreatedKey(null)}
               className="mt-2"
+              data-testid="button-dismiss-new-key"
             >
               Dismiss
             </Button>
@@ -351,10 +341,11 @@ export function ApiKeyManager({ className }: ApiKeyManagerProps) {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => copyToClipboard(`****${key.lastFour}`, toast)}
+                      onClick={() => toast({ title: "Key Hidden", description: "Full API keys are only shown once after creation for security", variant: "destructive" })}
                       data-testid={`button-copy-${key.id}`}
+                      disabled
                     >
-                      <Copy className="w-4 h-4" />
+                      <Copy className="w-4 h-4 opacity-50" />
                     </Button>
                     <Button
                       size="sm"
