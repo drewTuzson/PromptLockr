@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { SubscriptionManager } from '@/components/ui/subscription-manager';
 import { ExportManager } from '@/components/ui/export-manager';
+import { ApiKeyManager } from '@/components/ui/api-key-manager';
 import { RequireAuth } from '@/components/auth/AuthProvider';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/components/ui/theme-provider';
@@ -164,6 +165,17 @@ export default function Settings() {
                 </Button>
               </CardContent>
             </Card>
+
+            {/* API Keys Section */}
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-2xl font-bold text-foreground">Developer Tools</h2>
+                <p className="text-muted-foreground">
+                  Manage API keys for programmatic access to your prompts and collections.
+                </p>
+              </div>
+              <ApiKeyManager />
+            </div>
 
             {/* Subscription Management Section */}
             <div className="space-y-4">
