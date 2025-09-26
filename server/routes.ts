@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema, subscriptionTiers, userSubscriptions, usageMetrics, insertUserSubscriptionSchema, insertUsageMetricSchema, apiKeys, createApiKeySchema, exportJobs, contentReports, insertContentReportSchema } from "@shared/schema";
+import { loginSchema, signupSchema, insertPromptSchema, insertFolderSchema, enhancePromptSchema, enhanceNewPromptSchema, insertTemplateSchema, insertTemplateVariableSchema, instantiateTemplateSchema, templates, templateVariables, templateUsage, users, folders, profileImages, promptShares, shareLinks, promptCollections, collectionItems, collectionFollowers, aiEnhancementSessions, promptAnalytics, collabSessions, collabParticipants, collabContributions, aiRecommendations, insertPromptCollectionSchema, insertCollectionItemSchema, insertCollectionFollowerSchema, insertAiEnhancementSessionSchema, insertPromptAnalyticsSchema, insertCollabSessionSchema, insertCollabParticipantSchema, insertCollabContributionSchema, insertAiRecommendationSchema, notifications, insertNotificationSchema, subscriptionTiers, userSubscriptions, usageMetrics, insertUserSubscriptionSchema, insertUsageMetricSchema, apiKeys, createApiKeySchema, exportJobs, contentReports, insertContentReportSchema, activityFeed, insertActivityFeedSchema, userFollows, insertUserFollowSchema } from "@shared/schema";
 import { validateUsername, generateAvatar } from "@shared/avatarUtils";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -4346,6 +4346,296 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error('Error updating report:', error);
       res.status(500).json({ message: 'Failed to update report' });
+    }
+  });
+
+  // === Phase 4: Activity Feed & Social Features ===
+  
+  // GET /api/feed - Get activity feed for current user
+  app.get("/api/feed", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { page = 1, limit = 50, types } = req.query;
+      const offset = (Number(page) - 1) * Number(limit);
+
+      // Get users the current user follows to include their activities
+      const following = await drizzleDB
+        .select({ followingId: userFollows.followingId })
+        .from(userFollows)
+        .where(eq(userFollows.followerId, userId));
+
+      const followingIds = following.map(f => f.followingId);
+      
+      // Include the user's own activities plus activities from followed users
+      const userIdsToInclude = [userId, ...followingIds];
+
+      if (userIdsToInclude.length === 0) {
+        return res.json({ activities: [], pagination: { page: 1, limit: Number(limit), total: 0, totalPages: 0 } });
+      }
+
+      // Build filter conditions
+      const conditions = [inArray(activityFeed.actorUserId, userIdsToInclude)];
+      if (types && typeof types === 'string') {
+        const typeArray = types.split(',').filter(t => t.trim());
+        if (typeArray.length > 0) {
+          conditions.push(inArray(activityFeed.action, typeArray));
+        }
+      }
+
+      // Get activity feed with actor user info and target details
+      const activities = await drizzleDB
+        .select({
+          id: activityFeed.id,
+          userId: activityFeed.userId,
+          actorUserId: activityFeed.actorUserId,
+          action: activityFeed.action,
+          targetType: activityFeed.targetType,
+          targetId: activityFeed.targetId,
+          metadata: activityFeed.metadata,
+          createdAt: activityFeed.createdAt,
+          actorEmail: users.email,
+          actorUsername: sql`${users.username}`,
+          targetTitle: sql`
+            CASE 
+              WHEN ${activityFeed.targetType} = 'prompt' THEN ${prompts.title}
+              WHEN ${activityFeed.targetType} = 'collection' THEN ${promptCollections.name}
+              WHEN ${activityFeed.targetType} = 'user' THEN target_users.email
+              ELSE NULL
+            END AS target_title
+          `
+        })
+        .from(activityFeed)
+        .leftJoin(users, eq(activityFeed.actorUserId, users.id))
+        .leftJoin(prompts, and(
+          eq(activityFeed.targetType, 'prompt'),
+          eq(activityFeed.targetId, prompts.id)
+        ))
+        .leftJoin(promptCollections, and(
+          eq(activityFeed.targetType, 'collection'),
+          eq(activityFeed.targetId, promptCollections.id)
+        ))
+        .leftJoin(sql`users AS target_users`, and(
+          sql`${activityFeed.targetType} = 'user'`,
+          sql`${activityFeed.targetId} = target_users.id`
+        ))
+        .where(and(...conditions))
+        .orderBy(desc(activityFeed.createdAt))
+        .limit(Number(limit))
+        .offset(offset);
+
+      // Get total count for pagination
+      const [totalCount] = await drizzleDB
+        .select({ count: sql`count(*)` })
+        .from(activityFeed)
+        .where(and(...conditions));
+
+      res.json({
+        activities,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: Number(totalCount.count),
+          totalPages: Math.ceil(Number(totalCount.count) / Number(limit))
+        }
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching activity feed:', error);
+      res.status(500).json({ message: 'Failed to fetch activity feed' });
+    }
+  });
+
+  // POST /api/follow/:userId - Follow/unfollow a user
+  app.post("/api/follow/:userId", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { userId: targetUserId } = req.params;
+
+      if (!targetUserId) {
+        return res.status(400).json({ message: 'Target user ID required' });
+      }
+
+      if (userId === targetUserId) {
+        return res.status(400).json({ message: 'Cannot follow yourself' });
+      }
+
+      // Check if target user exists
+      const [targetUser] = await drizzleDB
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, targetUserId))
+        .limit(1);
+
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Check if already following
+      const [existingFollow] = await drizzleDB
+        .select()
+        .from(userFollows)
+        .where(and(
+          eq(userFollows.followerId, userId),
+          eq(userFollows.followingId, targetUserId)
+        ))
+        .limit(1);
+
+      if (existingFollow) {
+        // Unfollow - delete the relationship
+        await drizzleDB
+          .delete(userFollows)
+          .where(and(
+            eq(userFollows.followerId, userId),
+            eq(userFollows.followingId, targetUserId)
+          ));
+
+        res.json({
+          message: 'Unfollowed successfully',
+          isFollowing: false
+        });
+      } else {
+        // Follow - create the relationship
+        await drizzleDB
+          .insert(userFollows)
+          .values({
+            followerId: userId,
+            followingId: targetUserId
+          });
+
+        // Create activity feed entry for the follow action
+        await drizzleDB
+          .insert(activityFeed)
+          .values({
+            userId: targetUserId, // Notify the person being followed
+            actorUserId: userId,  // Who performed the action
+            action: 'followed',
+            targetType: 'user',
+            targetId: targetUserId,
+            metadata: {}
+          });
+
+        // Record usage metric for social interactions
+        await drizzleDB
+          .insert(usageMetrics)
+          .values({
+            userId,
+            metricType: 'social_follows',
+            value: 1,
+            periodStart: new Date(),
+            periodEnd: new Date()
+          });
+
+        res.json({
+          message: 'Following successfully',
+          isFollowing: true
+        });
+      }
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error following/unfollowing user:', error);
+      res.status(500).json({ message: 'Failed to update follow status' });
+    }
+  });
+
+  // GET /api/follow/following - List users you follow
+  app.get("/api/follow/following", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { page = 1, limit = 50 } = req.query;
+      const offset = (Number(page) - 1) * Number(limit);
+
+      // Get users this user follows with their profile info
+      const following = await drizzleDB
+        .select({
+          id: userFollows.id,
+          userId: userFollows.followingId,
+          email: users.email,
+          username: sql`${users.username}`,
+          followedAt: userFollows.followedAt
+        })
+        .from(userFollows)
+        .leftJoin(users, eq(userFollows.followingId, users.id))
+        .where(eq(userFollows.followerId, userId))
+        .orderBy(desc(userFollows.followedAt))
+        .limit(Number(limit))
+        .offset(offset);
+
+      // Get total count for pagination
+      const [totalCount] = await drizzleDB
+        .select({ count: sql`count(*)` })
+        .from(userFollows)
+        .where(eq(userFollows.followerId, userId));
+
+      res.json({
+        following,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: Number(totalCount.count),
+          totalPages: Math.ceil(Number(totalCount.count) / Number(limit))
+        }
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching following list:', error);
+      res.status(500).json({ message: 'Failed to fetch following list' });
+    }
+  });
+
+  // GET /api/follow/followers - List your followers
+  app.get("/api/follow/followers", subscriptionRateLimit, async (req, res) => {
+    try {
+      const { userId } = requireAuth(req);
+      const { page = 1, limit = 50 } = req.query;
+      const offset = (Number(page) - 1) * Number(limit);
+
+      // Get users that follow this user with their profile info
+      const followers = await drizzleDB
+        .select({
+          id: userFollows.id,
+          userId: userFollows.followerId,
+          email: users.email,
+          username: sql`${users.username}`,
+          followedAt: userFollows.followedAt
+        })
+        .from(userFollows)
+        .leftJoin(users, eq(userFollows.followerId, users.id))
+        .where(eq(userFollows.followingId, userId))
+        .orderBy(desc(userFollows.followedAt))
+        .limit(Number(limit))
+        .offset(offset);
+
+      // Get total count for pagination
+      const [totalCount] = await drizzleDB
+        .select({ count: sql`count(*)` })
+        .from(userFollows)
+        .where(eq(userFollows.followingId, userId));
+
+      res.json({
+        followers,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: Number(totalCount.count),
+          totalPages: Math.ceil(Number(totalCount.count) / Number(limit))
+        }
+      });
+
+    } catch (error: any) {
+      if (error.message === 'Unauthorized' || error.message === 'Invalid token') {
+        return res.status(401).json({ message: error.message });
+      }
+      console.error('Error fetching followers list:', error);
+      res.status(500).json({ message: 'Failed to fetch followers list' });
     }
   });
 
